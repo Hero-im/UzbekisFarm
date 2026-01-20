@@ -9,6 +9,31 @@ export default function Nav() {
   const { session, isLoading } = useAuth();
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [roomIds, setRoomIds] = useState<string[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAdmin = async () => {
+      if (!session) {
+        setIsAdmin(false);
+        return;
+      }
+      const { data } = await supabase
+        .from("admin_users")
+        .select("user_id")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (cancelled) return;
+      setIsAdmin(!!data);
+    };
+
+    loadAdmin();
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
 
   const loadUnread = useCallback(async () => {
     if (!session) {
@@ -206,6 +231,11 @@ export default function Nav() {
                 <span className="absolute -right-3 -top-2 h-2 w-2 rounded-full bg-red-500" />
               )}
             </Link>
+            {isAdmin && (
+              <Link href="/admin/seller-verifications" className="hover:underline">
+                관리자
+              </Link>
+            )}
             <Link href="/me" className="hover:underline">
               마이
             </Link>

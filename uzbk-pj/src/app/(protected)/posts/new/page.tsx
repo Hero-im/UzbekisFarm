@@ -24,6 +24,9 @@ export default function NewPostPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [message, setMessage] = useState("");
+  const [sellerStatus, setSellerStatus] = useState<
+    "none" | "pending" | "approved" | "rejected"
+  >("none");
 
   useEffect(() => {
     let cancelled = false;
@@ -36,9 +39,16 @@ export default function NewPostPage() {
         .eq("id", session.user.id)
         .single();
 
+      const { data: verification } = await supabase
+        .from("seller_verifications")
+        .select("status")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
       if (cancelled) return;
       setRegionCode(data?.region_code ?? "");
       setRegionName(data?.region_name ?? "");
+      setSellerStatus((verification?.status ?? "none") as typeof sellerStatus);
     };
 
     loadProfile();
@@ -74,6 +84,10 @@ export default function NewPostPage() {
     e.preventDefault();
     if (!session) {
       setMessage("로그인이 필요합니다.");
+      return;
+    }
+    if (sellerStatus !== "approved") {
+      setMessage("판매자 인증 승인 후 등록할 수 있습니다.");
       return;
     }
     if (!regionCode) {
@@ -162,6 +176,12 @@ export default function NewPostPage() {
       <p className="text-sm text-zinc-600">
         지역: {regionName || regionCode || "미설정"}
       </p>
+      {sellerStatus !== "approved" && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          판매자 인증 승인 후 판매글을 등록할 수 있습니다. 마이페이지에서
+          인증 요청을 진행해주세요.
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <input

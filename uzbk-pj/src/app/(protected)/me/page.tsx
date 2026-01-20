@@ -25,6 +25,9 @@ const REGIONS = [
   { code: "50", name: "제주" },
 ];
 
+const LICENSE_BUCKET = "seller-licenses";
+const MAX_LICENSE_MB = 5;
+
 export default function MePage() {
   const router = useRouter();
   const { session } = useAuth();
@@ -41,6 +44,29 @@ export default function MePage() {
 
   const [nicknameMsg, setNicknameMsg] = useState("");
   const [regionMsg, setRegionMsg] = useState("");
+
+  const [verification, setVerification] = useState<any | null>(null);
+  const [verificationMsg, setVerificationMsg] = useState("");
+  const [verificationLoading, setVerificationLoading] = useState(false);
+  const [licenseFile, setLicenseFile] = useState<File | null>(null);
+  const [licenseUrl, setLicenseUrl] = useState("");
+  const [isEditingApproved, setIsEditingApproved] = useState(false);
+
+  const [farmName, setFarmName] = useState("");
+  const [ownerName, setOwnerName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [address, setAddress] = useState("");
+  const [locationNote, setLocationNote] = useState("");
+  const [farmDescription, setFarmDescription] = useState("");
+  const [approvedSnapshot, setApprovedSnapshot] = useState<{
+    farmName: string;
+    ownerName: string;
+    phone: string;
+    address: string;
+    locationNote: string;
+    farmDescription: string;
+    licensePath: string;
+  } | null>(null);
 
   const filtered = useMemo(() => {
     const q = search.trim();
@@ -78,6 +104,14 @@ export default function MePage() {
         .eq("reviewer_id", session.user.id)
         .order("created_at", { ascending: false });
 
+      const { data: verificationData } = await supabase
+        .from("seller_verifications")
+        .select(
+          "user_id,farm_name,owner_name,phone,address,location_note,description,business_license_path,status,requested_at,reviewed_at,rejection_reason"
+        )
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
       if (cancelled) return;
 
       setNickname(profile?.nickname ?? "");
@@ -86,7 +120,35 @@ export default function MePage() {
       setPosts(postData ?? []);
       setReceivedReviews(reviewData ?? []);
       setGivenReviews(givenReviewData ?? []);
+      setVerification(verificationData ?? null);
+      const snapshot = {
+        farmName: verificationData?.farm_name ?? "",
+        ownerName: verificationData?.owner_name ?? "",
+        phone: verificationData?.phone ?? "",
+        address: verificationData?.address ?? "",
+        locationNote: verificationData?.location_note ?? "",
+        farmDescription: verificationData?.description ?? "",
+        licensePath: verificationData?.business_license_path ?? "",
+      };
+      setFarmName(snapshot.farmName);
+      setOwnerName(snapshot.ownerName);
+      setPhone(snapshot.phone);
+      setAddress(snapshot.address);
+      setLocationNote(snapshot.locationNote);
+      setFarmDescription(snapshot.farmDescription);
+      setApprovedSnapshot(
+        verificationData?.status === "approved" ? snapshot : null
+      );
       setLoading(false);
+
+      if (verificationData?.business_license_path) {
+        const { data: signed } = await supabase.storage
+          .from(LICENSE_BUCKET)
+          .createSignedUrl(verificationData.business_license_path, 60 * 30);
+        if (signed?.signedUrl) {
+          setLicenseUrl(signed.signedUrl);
+        }
+      }
     };
 
     load();
@@ -160,6 +222,183 @@ export default function MePage() {
     setRegionMsg("지역 변경 완료");
   };
 
+  const handleLicenseChange = (file: File | null) => {
+    if (!file) {
+      setLicenseFile(null);
+      return;
+    }
+    if (file.size > MAX_LICENSE_MB * 1024 * 1024) {
+      setVerificationMsg(`파일 용량은 ${MAX_LICENSE_MB}MB 이하만 가능합니다.`);
+      return;
+    }
+    setLicenseFile(file);
+  };
+
+  const getLicensePath = (file: File) => {
+    const ext = file.name.includes(".")
+      ? "." + file.name.split(".").pop()
+      : "";
+    return `${session?.user.id}/${Date.now()}${ext}`;
+  };
+
+  const handleVerificationSubmit = async () => {
+    if (!session) return;
+    if (verification?.status === "approved" && !isEditingApproved) {
+      setVerificationMsg(
+        "이미 판매자 인증이 승인되었습니다. 추가 변경은 고객센터에 문의하세요."
+      );
+      return;
+    }
+
+    const trimmedFarmName = farmName.trim();
+    const trimmedOwnerName = ownerName.trim();
+    const trimmedPhone = phone.trim();
+    const trimmedAddress = address.trim();
+
+    if (!trimmedFarmName || !trimmedOwnerName || !trimmedPhone || !trimmedAddress) {
+      setVerificationMsg("필수 정보를 모두 입력하세요.");
+      return;
+    }
+
+    const licenseChanged = Boolean(licenseFile);
+    const coreChanged =
+      (verification?.farm_name ?? "") !== trimmedFarmName ||
+      (verification?.owner_name ?? "") !== trimmedOwnerName ||
+      (verification?.address ?? "") !== trimmedAddress ||
+      licenseChanged;
+
+    const requiresReview =
+      verification?.status === "approved" && isEditingApproved && coreChanged;
+
+    if (requiresReview) {
+      const ok = window.confirm(
+        "심사 필요 항목을 변경한 경우 재심사를 거쳐야 하며, 재심사 기간 동안은 상품 등록을 할 수 없습니다. 변경하시겠습니까?"
+      );
+      if (!ok) {
+        if (approvedSnapshot) {
+          setFarmName(approvedSnapshot.farmName);
+          setOwnerName(approvedSnapshot.ownerName);
+          setPhone(approvedSnapshot.phone);
+          setAddress(approvedSnapshot.address);
+          setLocationNote(approvedSnapshot.locationNote);
+          setFarmDescription(approvedSnapshot.farmDescription);
+          setLicenseFile(null);
+        }
+        setVerificationMsg("정보 수정을 취소했습니다.");
+        return;
+      }
+    }
+
+    setVerificationLoading(true);
+    setVerificationMsg("");
+
+    let licensePath = verification?.business_license_path ?? null;
+    if (licenseFile) {
+      const path = getLicensePath(licenseFile);
+      const { error: uploadError } = await supabase.storage
+        .from(LICENSE_BUCKET)
+        .upload(path, licenseFile, { upsert: true });
+
+      if (uploadError) {
+        setVerificationMsg("사업자 등록증 업로드에 실패했습니다.");
+        setVerificationLoading(false);
+        return;
+      }
+      licensePath = path;
+    }
+
+    if (!licensePath) {
+      setVerificationMsg("사업자 등록증 파일을 업로드하세요.");
+      setVerificationLoading(false);
+      return;
+    }
+
+    const payload = {
+      user_id: session.user.id,
+      farm_name: trimmedFarmName,
+      owner_name: trimmedOwnerName,
+      phone: trimmedPhone,
+      address: trimmedAddress,
+      location_note: locationNote.trim() || null,
+      description: farmDescription.trim() || null,
+      business_license_path: licensePath,
+      status:
+        verification?.status === "approved" && isEditingApproved
+          ? requiresReview
+            ? "pending"
+            : "approved"
+          : "pending",
+      requested_at:
+        verification?.status === "approved" && isEditingApproved
+          ? requiresReview
+            ? new Date().toISOString()
+            : verification?.requested_at ?? new Date().toISOString()
+          : new Date().toISOString(),
+      reviewed_at:
+        verification?.status === "approved" && isEditingApproved
+          ? requiresReview
+            ? null
+            : verification?.reviewed_at ?? null
+          : null,
+      rejection_reason:
+        verification?.status === "approved" && isEditingApproved
+          ? requiresReview
+            ? null
+            : verification?.rejection_reason ?? null
+          : null,
+      reviewed_by:
+        verification?.status === "approved" && isEditingApproved
+          ? requiresReview
+            ? null
+            : verification?.reviewed_by ?? null
+          : null,
+    };
+
+    const { data: saved, error: saveError } = await supabase
+      .from("seller_verifications")
+      .upsert(payload, { onConflict: "user_id" })
+      .select(
+        "user_id,farm_name,owner_name,phone,address,location_note,description,business_license_path,status,requested_at,reviewed_at,rejection_reason"
+      )
+      .single();
+
+    if (saveError) {
+      setVerificationMsg("인증 요청에 실패했습니다.");
+      setVerificationLoading(false);
+      return;
+    }
+
+    setVerification(saved ?? null);
+    if (saved?.status === "approved") {
+      setApprovedSnapshot({
+        farmName: saved.farm_name ?? "",
+        ownerName: saved.owner_name ?? "",
+        phone: saved.phone ?? "",
+        address: saved.address ?? "",
+        locationNote: saved.location_note ?? "",
+        farmDescription: saved.description ?? "",
+        licensePath: saved.business_license_path ?? "",
+      });
+    } else if (saved?.status === "pending") {
+      setApprovedSnapshot(null);
+    }
+    if (saved?.business_license_path) {
+      const { data: signed } = await supabase.storage
+        .from(LICENSE_BUCKET)
+        .createSignedUrl(saved.business_license_path, 60 * 30);
+      setLicenseUrl(signed?.signedUrl ?? "");
+    }
+    setVerificationMsg(
+      verification?.status === "approved" && isEditingApproved
+        ? requiresReview
+          ? "정보 수정 요청이 접수되었습니다."
+          : "판매자 정보가 수정되었습니다."
+        : "인증 요청을 보냈습니다."
+    );
+    setIsEditingApproved(false);
+    setVerificationLoading(false);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.replace("/auth");
@@ -225,6 +464,151 @@ export default function MePage() {
           지역 저장
         </button>
         {regionMsg && <p className="text-sm text-zinc-600">{regionMsg}</p>}
+      </section>
+
+      <section className="space-y-3 border-b pb-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-medium">판매자 인증</h2>
+          <span className="text-xs text-zinc-500">
+            {verification?.status === "approved"
+              ? "승인 완료"
+              : verification?.status === "pending"
+              ? "심사 중"
+              : verification?.status === "rejected"
+              ? "반려됨"
+              : "미신청"}
+          </span>
+        </div>
+        {verification?.status === "rejected" && verification?.rejection_reason && (
+          <p className="text-sm text-red-500">
+            반려 사유: {verification.rejection_reason}
+          </p>
+        )}
+        <p className="text-xs text-zinc-500">
+          * 표시된 항목은 심사 필요 항목입니다. 변경 시 재심사가 필요할 수
+          있습니다.
+        </p>
+        <div className="grid gap-3 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">
+              농장 이름 <span className="text-red-500">*</span>
+            </span>
+            <input
+              className="w-full rounded border px-3 py-2"
+              placeholder="예: Uzbeki Farm"
+              value={farmName}
+              onChange={(e) => setFarmName(e.target.value)}
+              disabled={verification?.status === "approved" && !isEditingApproved}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">
+              농장주 성명 <span className="text-red-500">*</span>
+            </span>
+            <input
+              className="w-full rounded border px-3 py-2"
+              placeholder="예: 홍길동"
+              value={ownerName}
+              onChange={(e) => setOwnerName(e.target.value)}
+              disabled={verification?.status === "approved" && !isEditingApproved}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">
+              연락처 <span className="text-red-500">*</span>
+            </span>
+            <input
+              className="w-full rounded border px-3 py-2"
+              placeholder="예: 010-1234-5678"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              disabled={verification?.status === "approved" && !isEditingApproved}
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">
+              농장 주소 <span className="text-red-500">*</span>
+            </span>
+            <input
+              className="w-full rounded border px-3 py-2"
+              placeholder="예: 서울시 ... "
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              disabled={verification?.status === "approved" && !isEditingApproved}
+            />
+          </label>
+        </div>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">농장 위치 부가 설명</span>
+          <input
+            className="w-full rounded border px-3 py-2"
+            placeholder="예: 마을회관에서 200m"
+            value={locationNote}
+            onChange={(e) => setLocationNote(e.target.value)}
+            disabled={verification?.status === "approved" && !isEditingApproved}
+          />
+        </label>
+        <label className="space-y-1 text-sm">
+          <span className="font-medium">농장 추가 설명</span>
+          <textarea
+            className="w-full rounded border px-3 py-2"
+            placeholder="예: 유기농 인증, 방문 수령 가능"
+            value={farmDescription}
+            onChange={(e) => setFarmDescription(e.target.value)}
+            disabled={verification?.status === "approved" && !isEditingApproved}
+          />
+        </label>
+        <div className="space-y-2 text-sm">
+          <div className="font-medium">
+            사업자 등록증 <span className="text-red-500">*</span>
+          </div>
+          <input
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={(e) => handleLicenseChange(e.target.files?.[0] ?? null)}
+            disabled={verification?.status === "approved" && !isEditingApproved}
+          />
+          {licenseUrl && (
+            <a
+              href={licenseUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-blue-600 underline"
+            >
+              업로드된 등록증 보기
+            </a>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer disabled:opacity-60"
+            onClick={handleVerificationSubmit}
+            disabled={
+              verificationLoading ||
+              (verification?.status === "approved" && !isEditingApproved)
+            }
+          >
+            {verificationLoading
+              ? "요청 중..."
+              : verification?.status === "approved" && isEditingApproved
+              ? "정보 수정 저장"
+              : "인증 요청"}
+          </button>
+          {verification?.status === "approved" && !isEditingApproved && (
+            <button
+              className="rounded border px-4 py-2 text-sm text-zinc-700 cursor-pointer"
+              onClick={() => {
+                setIsEditingApproved(true);
+                setVerificationMsg("정보 수정을 진행하세요.");
+              }}
+            >
+              정보 수정
+            </button>
+          )}
+        </div>
+        {verificationMsg && (
+          <p className="text-sm text-zinc-600">{verificationMsg}</p>
+        )}
       </section>
 
       <section className="border-b pb-6">
