@@ -37,6 +37,19 @@ export default function ChatListPage() {
   const [profiles, setProfiles] = useState<Record<string, ProfileRow>>({});
   const [loading, setLoading] = useState(true);
 
+  const upsertProfile = async (userId: string | null | undefined) => {
+    if (!userId) return;
+    if (profiles[userId]) return;
+    const { data } = await supabase
+      .from("profiles")
+      .select("id,nickname")
+      .eq("id", userId)
+      .maybeSingle();
+    if (data) {
+      setProfiles((prev) => ({ ...prev, [data.id]: data }));
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -130,6 +143,61 @@ export default function ChatListPage() {
     load();
     return () => {
       cancelled = true;
+    };
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    const buyerChannel = supabase
+      .channel(`chat-rooms:buyer:${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_rooms",
+          filter: `buyer_id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          const room = payload.new as Room;
+          setRooms((prev) => {
+            if (prev.some((r) => r.id === room.id)) return prev;
+            return [room, ...prev];
+          });
+          setUnreadCounts((prev) => ({ ...prev, [room.id]: 0 }));
+          setLastMessages((prev) => ({ ...prev, [room.id]: null }));
+          void upsertProfile(room.seller_id);
+        }
+      )
+      .subscribe();
+
+    const sellerChannel = supabase
+      .channel(`chat-rooms:seller:${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_rooms",
+          filter: `seller_id=eq.${session.user.id}`,
+        },
+        (payload) => {
+          const room = payload.new as Room;
+          setRooms((prev) => {
+            if (prev.some((r) => r.id === room.id)) return prev;
+            return [room, ...prev];
+          });
+          setUnreadCounts((prev) => ({ ...prev, [room.id]: 0 }));
+          setLastMessages((prev) => ({ ...prev, [room.id]: null }));
+          void upsertProfile(room.buyer_id);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(buyerChannel);
+      supabase.removeChannel(sellerChannel);
     };
   }, [session]);
 

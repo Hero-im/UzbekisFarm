@@ -180,6 +180,41 @@ export default function ChatRoomPage() {
   }, [roomId, room, session]);
 
   useEffect(() => {
+    if (!postId || !session) return;
+
+    const channel = supabase
+      .channel(`post:${postId}:chat`)
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "posts",
+          filter: `id=eq.${postId}`,
+        },
+        (payload) => {
+          const nextPost = payload.new as {
+            status?: string | null;
+            sold_room_id?: string | null;
+            title?: string | null;
+            price?: number | null;
+          };
+          setPostStatus(nextPost.status ?? null);
+          setSoldRoomId(nextPost.sold_room_id ?? null);
+          setPostTitle(nextPost.title ?? null);
+          setPostPrice(
+            typeof nextPost.price === "number" ? nextPost.price : null
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [postId, session]);
+
+  useEffect(() => {
     if (loading) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
