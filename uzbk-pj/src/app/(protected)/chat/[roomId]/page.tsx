@@ -215,6 +215,52 @@ export default function ChatRoomPage() {
   }, [postId, session]);
 
   useEffect(() => {
+    if (!roomId || !session) return;
+
+    const intervalId = setInterval(async () => {
+      const { data: messageData } = await supabase
+        .from("chat_messages")
+        .select("id,sender_id,content,created_at")
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: true });
+      setMessages(messageData ?? []);
+
+      if (postId) {
+        const { data: postData } = await supabase
+          .from("posts")
+          .select("status,sold_room_id,title,price")
+          .eq("id", postId)
+          .maybeSingle();
+        setPostStatus(postData?.status ?? null);
+        setSoldRoomId(postData?.sold_room_id ?? null);
+        setPostTitle(postData?.title ?? null);
+        setPostPrice(postData?.price ?? null);
+
+        const { data: imageData } = await supabase
+          .from("post_images")
+          .select("storage_path")
+          .eq("post_id", postId)
+          .order("sort_order", { ascending: true })
+          .limit(1);
+
+        const storagePath = imageData?.[0]?.storage_path;
+        if (storagePath) {
+          const { data } = supabase.storage
+            .from("post-images")
+            .getPublicUrl(storagePath);
+          setPostImageUrl(data.publicUrl);
+        } else {
+          setPostImageUrl(null);
+        }
+      }
+    }, 5000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [roomId, postId, session]);
+
+  useEffect(() => {
     if (loading) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);

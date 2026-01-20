@@ -66,6 +66,16 @@ export default function Nav() {
   }, [loadUnread]);
 
   useEffect(() => {
+    if (!session) return;
+    const intervalId = setInterval(() => {
+      loadUnread();
+    }, 5000);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [session, loadUnread]);
+
+  useEffect(() => {
     if (!session || roomIds.length === 0) return;
 
     const channels = roomIds.map((roomId) =>

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
@@ -50,101 +50,112 @@ export default function ChatListPage() {
     }
   };
 
+  const loadRooms = useCallback(async () => {
+    if (!session) {
+      setLoading(false);
+      return;
+    }
+
+    const { data: roomData } = await supabase
+      .from("chat_rooms")
+      .select(
+        "id,post_id,buyer_id,seller_id,created_at,buyer_last_read_at,seller_last_read_at"
+      )
+      .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
+      .order("created_at", { ascending: false });
+
+    const nextRooms = roomData ?? [];
+    setRooms(nextRooms);
+
+    const roomIds = nextRooms.map((room) => room.id);
+    const otherUserIds = nextRooms
+      .map((room) =>
+        room.buyer_id === session.user.id ? room.seller_id : room.buyer_id
+      )
+      .filter((id): id is string => Boolean(id));
+
+    if (roomIds.length > 0) {
+      const { data: messageData } = await supabase
+        .from("chat_messages")
+        .select("room_id,content,created_at,sender_id")
+        .in("room_id", roomIds)
+        .order("created_at", { ascending: false })
+        .limit(500);
+
+      const nextLast: Record<string, LastMessage | null> = {};
+      const nextUnread: Record<string, number> = {};
+      const lastReadByRoom: Record<string, number> = {};
+
+      nextRooms.forEach((room) => {
+        const lastReadAt =
+          room.buyer_id === session.user.id
+            ? room.buyer_last_read_at
+            : room.seller_last_read_at;
+        lastReadByRoom[room.id] = lastReadAt ? Date.parse(lastReadAt) : 0;
+        nextUnread[room.id] = 0;
+      });
+
+      (messageData ?? []).forEach((msg) => {
+        if (!nextLast[msg.room_id]) {
+          nextLast[msg.room_id] = {
+            content: msg.content,
+            created_at: msg.created_at,
+          };
+        }
+        const lastRead = lastReadByRoom[msg.room_id] ?? 0;
+        if (
+          msg.sender_id !== session.user.id &&
+          Date.parse(msg.created_at) > lastRead
+        ) {
+          nextUnread[msg.room_id] = (nextUnread[msg.room_id] ?? 0) + 1;
+        }
+      });
+      setLastMessages(nextLast);
+      setUnreadCounts(nextUnread);
+    } else {
+      setLastMessages({});
+      setUnreadCounts({});
+    }
+
+    if (otherUserIds.length > 0) {
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("id,nickname")
+        .in("id", otherUserIds);
+
+      const nextProfiles: Record<string, ProfileRow> = {};
+      (profileData ?? []).forEach((profile) => {
+        nextProfiles[profile.id] = profile;
+      });
+      setProfiles(nextProfiles);
+    }
+
+    setLoading(false);
+  }, [session]);
+
   useEffect(() => {
     let cancelled = false;
 
     const load = async () => {
-      if (!session) {
-        setLoading(false);
-        return;
-      }
-
-      const { data: roomData } = await supabase
-        .from("chat_rooms")
-        .select(
-          "id,post_id,buyer_id,seller_id,created_at,buyer_last_read_at,seller_last_read_at"
-        )
-        .or(`buyer_id.eq.${session.user.id},seller_id.eq.${session.user.id}`)
-        .order("created_at", { ascending: false });
-
       if (cancelled) return;
-      const nextRooms = roomData ?? [];
-      setRooms(nextRooms);
-
-      const roomIds = nextRooms.map((room) => room.id);
-      const otherUserIds = nextRooms
-        .map((room) =>
-          room.buyer_id === session.user.id ? room.seller_id : room.buyer_id
-        )
-        .filter((id): id is string => Boolean(id));
-
-      if (roomIds.length > 0) {
-        const { data: messageData } = await supabase
-          .from("chat_messages")
-          .select("room_id,content,created_at,sender_id")
-          .in("room_id", roomIds)
-          .order("created_at", { ascending: false })
-          .limit(500);
-
-        if (!cancelled) {
-          const nextLast: Record<string, LastMessage | null> = {};
-          const nextUnread: Record<string, number> = {};
-          const lastReadByRoom: Record<string, number> = {};
-
-          nextRooms.forEach((room) => {
-            const lastReadAt =
-              room.buyer_id === session.user.id
-                ? room.buyer_last_read_at
-                : room.seller_last_read_at;
-            lastReadByRoom[room.id] = lastReadAt
-              ? Date.parse(lastReadAt)
-              : 0;
-            nextUnread[room.id] = 0;
-          });
-
-          (messageData ?? []).forEach((msg) => {
-            if (!nextLast[msg.room_id]) {
-              nextLast[msg.room_id] = {
-                content: msg.content,
-                created_at: msg.created_at,
-              };
-            }
-            const lastRead = lastReadByRoom[msg.room_id] ?? 0;
-            if (
-              msg.sender_id !== session.user.id &&
-              Date.parse(msg.created_at) > lastRead
-            ) {
-              nextUnread[msg.room_id] = (nextUnread[msg.room_id] ?? 0) + 1;
-            }
-          });
-          setLastMessages(nextLast);
-          setUnreadCounts(nextUnread);
-        }
-      }
-
-      if (otherUserIds.length > 0) {
-        const { data: profileData } = await supabase
-          .from("profiles")
-          .select("id,nickname")
-          .in("id", otherUserIds);
-
-        if (!cancelled) {
-          const nextProfiles: Record<string, ProfileRow> = {};
-          (profileData ?? []).forEach((profile) => {
-            nextProfiles[profile.id] = profile;
-          });
-          setProfiles(nextProfiles);
-        }
-      }
-
-      setLoading(false);
+      await loadRooms();
     };
 
     load();
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [loadRooms]);
+
+  useEffect(() => {
+    if (!session) return;
+    const intervalId = setInterval(() => {
+      loadRooms();
+    }, 5000);
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [session, loadRooms]);
 
   useEffect(() => {
     if (!session) return;
