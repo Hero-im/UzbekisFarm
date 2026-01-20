@@ -218,25 +218,34 @@ export default function Nav() {
         {isLoading ? (
           <span className="text-sm text-zinc-500">로딩 중...</span>
         ) : session ? (
-          <nav className="flex items-center gap-4 text-sm">
-            <Link href="/feed" className="hover:underline">
-              피드
-            </Link>
-            <Link href="/posts/new" className="hover:underline">
+          <nav className="flex items-center gap-2 text-sm">
+            <Link
+              href="/posts/new"
+              className="rounded-full border border-zinc-200 px-3 py-1.5 hover:border-zinc-900"
+            >
               글쓰기
             </Link>
-            <Link href="/chat" className="relative hover:underline">
+            <Link
+              href="/chat"
+              className="relative rounded-full border border-zinc-200 px-3 py-1.5 hover:border-zinc-900"
+            >
               채팅
               {unreadTotal > 0 && (
-                <span className="absolute -right-3 -top-2 h-2 w-2 rounded-full bg-red-500" />
+                <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500" />
               )}
             </Link>
             {isAdmin && (
-              <Link href="/admin/seller-verifications" className="hover:underline">
+              <Link
+                href="/admin/seller-verifications"
+                className="rounded-full border border-zinc-200 px-3 py-1.5 hover:border-zinc-900"
+              >
                 관리자
               </Link>
             )}
-            <Link href="/me" className="hover:underline">
+            <Link
+              href="/me"
+              className="rounded-full border border-zinc-200 px-3 py-1.5 hover:border-zinc-900"
+            >
               마이
             </Link>
           </nav>
