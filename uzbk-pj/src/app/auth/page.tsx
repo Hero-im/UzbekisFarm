@@ -65,7 +65,7 @@ export default function AuthPage() {
     const { data, error } = await supabase
       .from("profiles")
       .select("id")
-      .eq("nickname", value)
+      .ilike("nickname", value)
       .limit(1);
 
     if (error) {

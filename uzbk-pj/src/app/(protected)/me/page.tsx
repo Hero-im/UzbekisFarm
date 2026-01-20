@@ -97,9 +97,31 @@ export default function MePage() {
 
   const handleNicknameSave = async () => {
     if (!session) return;
+    const value = nickname.trim();
+    if (!value) {
+      setNicknameMsg("닉네임을 입력하세요.");
+      return;
+    }
+
+    const { data: exists, error: existsError } = await supabase
+      .from("profiles")
+      .select("id")
+      .ilike("nickname", value)
+      .neq("id", session.user.id)
+      .limit(1);
+
+    if (existsError) {
+      setNicknameMsg(existsError.message);
+      return;
+    }
+    if (exists && exists.length > 0) {
+      setNicknameMsg("이미 사용 중인 닉네임입니다.");
+      return;
+    }
+
     const { error } = await supabase.from("profiles").upsert({
       id: session.user.id,
-      nickname: nickname || null,
+      nickname: value || null,
     });
     if (error) {
       setNicknameMsg(error.message);
