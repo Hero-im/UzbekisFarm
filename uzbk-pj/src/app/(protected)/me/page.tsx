@@ -126,7 +126,7 @@ export default function MePage() {
         setNicknameMsg("이미 사용 중인 닉네임입니다.");
         return;
       }
-      setNicknameMsg(error.message);
+      setNicknameMsg("닉네임 저장에 실패했습니다.");
       return;
     }
     setNicknameMsg("닉네임 저장 완료");
@@ -182,7 +182,17 @@ export default function MePage() {
         >
           닉네임 저장
         </button>
-        {nicknameMsg && <p className="text-sm text-zinc-600">{nicknameMsg}</p>}
+        {nicknameMsg && (
+          <p
+            className={`text-sm ${
+              nicknameMsg === "이미 사용 중인 닉네임입니다."
+                ? "text-red-500"
+                : "text-zinc-600"
+            }`}
+          >
+            {nicknameMsg}
+          </p>
+        )}
       </section>
 
       <section className="space-y-2 border-b pb-6">
