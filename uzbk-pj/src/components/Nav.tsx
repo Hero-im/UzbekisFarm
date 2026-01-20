@@ -96,6 +96,29 @@ export default function Nav() {
   useEffect(() => {
     if (!session) return;
 
+    const messageChannel = supabase
+      .channel("chat-messages:nav")
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_messages",
+        },
+        () => {
+          loadUnread();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(messageChannel);
+    };
+  }, [session, loadUnread]);
+
+  useEffect(() => {
+    if (!session) return;
+
     const buyerChannel = supabase
       .channel(`chat-rooms:nav-buyer:${session.user.id}`)
       .on(
