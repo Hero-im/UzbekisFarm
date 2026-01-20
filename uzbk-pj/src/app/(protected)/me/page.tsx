@@ -103,18 +103,16 @@ export default function MePage() {
       return;
     }
 
-    const { data: exists, error: existsError } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("nickname", value)
-      .neq("id", session.user.id)
-      .limit(1);
+    const { data, error } = await supabase.rpc("is_nickname_available", {
+      nickname: value,
+      self_id: session.user.id,
+    });
 
-    if (existsError) {
-      setNicknameMsg(existsError.message);
+    if (error) {
+      setNicknameMsg(error.message);
       return;
     }
-    if (exists && exists.length > 0) {
+    if (data === false) {
       setNicknameMsg("이미 사용 중인 닉네임입니다.");
       return;
     }

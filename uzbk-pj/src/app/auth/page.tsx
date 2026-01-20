@@ -62,11 +62,10 @@ export default function AuthPage() {
     setNicknameCheck("checking");
     setNicknameCheckMessage("확인 중...");
 
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("id")
-      .ilike("nickname", value)
-      .limit(1);
+    const { data, error } = await supabase.rpc(
+      "is_nickname_available",
+      { nickname: value, self_id: null }
+    );
 
     if (error) {
       setNicknameCheck("unchecked");
@@ -74,7 +73,7 @@ export default function AuthPage() {
       return;
     }
 
-    if (data && data.length > 0) {
+    if (data === false) {
       setNicknameCheck("taken");
       setNicknameCheckMessage("이미 사용 중인 닉네임입니다.");
       return;
