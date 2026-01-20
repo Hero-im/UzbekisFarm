@@ -66,16 +66,6 @@ export default function Nav() {
   }, [loadUnread]);
 
   useEffect(() => {
-    if (!session) return;
-    const intervalId = setInterval(() => {
-      loadUnread();
-    }, 5000);
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [session, loadUnread]);
-
-  useEffect(() => {
     if (!session || roomIds.length === 0) return;
 
     const channels = roomIds.map((roomId) =>
@@ -102,6 +92,47 @@ export default function Nav() {
       });
     };
   }, [roomIds, session, loadUnread]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    const buyerChannel = supabase
+      .channel(`chat-rooms:nav-buyer:${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_rooms",
+          filter: `buyer_id=eq.${session.user.id}`,
+        },
+        () => {
+          loadUnread();
+        }
+      )
+      .subscribe();
+
+    const sellerChannel = supabase
+      .channel(`chat-rooms:nav-seller:${session.user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "chat_rooms",
+          filter: `seller_id=eq.${session.user.id}`,
+        },
+        () => {
+          loadUnread();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(buyerChannel);
+      supabase.removeChannel(sellerChannel);
+    };
+  }, [session, loadUnread]);
 
   useEffect(() => {
     if (!session || roomIds.length === 0) return;
