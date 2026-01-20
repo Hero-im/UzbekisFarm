@@ -147,15 +147,6 @@ export default function ChatListPage() {
     };
   }, [loadRooms]);
 
-  useEffect(() => {
-    if (!session) return;
-    const intervalId = setInterval(() => {
-      loadRooms();
-    }, 5000);
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, [session, loadRooms]);
 
   useEffect(() => {
     if (!session) return;
