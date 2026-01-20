@@ -122,7 +122,10 @@ export default function MePage() {
       nickname: value || null,
     });
     if (updateError) {
-      if (updateError.code === "23505") {
+      const isDuplicate =
+        updateError.code === "23505" ||
+        updateError.message.includes("duplicate key value");
+      if (isDuplicate) {
         setNicknameMsg("이미 사용 중인 닉네임입니다.");
         return;
       }
