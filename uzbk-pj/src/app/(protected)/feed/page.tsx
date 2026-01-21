@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import Loading from "@/components/Loading";
@@ -24,23 +24,29 @@ type Post = {
 const CATEGORIES = ["전체", "채소", "과일", "곡물", "기타"];
 const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 };
 const NEARBY_RADIUS_KM = 25;
+const SECTION_LIMIT = 6;
 
 export default function FeedPage() {
   const router = useRouter();
+  const pathname = usePathname();
   const { session } = useAuth();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [regionCode, setRegionCode] = useState<string | null>(null);
-  const [regionName, setRegionName] = useState<string | null>(null);
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [localPosts, setLocalPosts] = useState<Post[]>([]);
+  const [profileAddress, setProfileAddress] = useState<string | null>(null);
+  const [profileLocation, setProfileLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [currentLocation, setCurrentLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [geoError, setGeoError] = useState("");
   const [category, setCategory] = useState("전체");
   const [loading, setLoading] = useState(true);
   const [showSold, setShowSold] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
-  const [userLocation, setUserLocation] = useState<{
-    lat: number;
-    lng: number;
-  } | null>(null);
-  const [geoError, setGeoError] = useState("");
   const [nearbyFarms, setNearbyFarms] = useState<FarmMarker[]>([]);
   const [sellerInfo, setSellerInfo] = useState<
     Record<
@@ -50,14 +56,22 @@ export default function FeedPage() {
         address: string | null;
         ratingAvg: number | null;
         ratingCount: number;
+        lat: number | null;
+        lng: number | null;
       }
     >
   >({});
 
   const mapCenter = useMemo(
-    () => userLocation ?? DEFAULT_CENTER,
-    [userLocation]
+    () => currentLocation ?? profileLocation ?? DEFAULT_CENTER,
+    [currentLocation, profileLocation]
   );
+
+  const scope = useMemo<"both" | "local" | "all">(() => {
+    if (pathname?.includes("/feed/local")) return "local";
+    if (pathname?.includes("/feed/all")) return "all";
+    return "both";
+  }, [pathname]);
 
   const formatShortAddress = (value?: string | null) => {
     if (!value) return "";
@@ -66,10 +80,10 @@ export default function FeedPage() {
         .split(",")
         .map((part) => part.trim())
         .filter(Boolean);
-      return parts.slice(-2).join(", ");
+      return parts.slice(0, 2).join(", ");
     }
     const parts = value.split(" ").filter(Boolean);
-    return parts.slice(-2).join(" ");
+    return parts.slice(0, 2).join(" ");
   };
 
   useEffect(() => {
@@ -79,13 +93,18 @@ export default function FeedPage() {
       if (!session) return;
       const { data } = await supabase
         .from("profiles")
-        .select("region_code,region_name")
+        .select("address,latitude,longitude")
         .eq("id", session.user.id)
         .single();
 
       if (cancelled) return;
-      setRegionCode(data?.region_code ?? null);
-      setRegionName(data?.region_name ?? null);
+      setProfileAddress(data?.address ?? null);
+      if (data?.latitude != null && data?.longitude != null) {
+        setProfileLocation({
+          lat: Number(data.latitude),
+          lng: Number(data.longitude),
+        });
+      }
     };
 
     loadProfile();
@@ -101,14 +120,14 @@ export default function FeedPage() {
     }
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserLocation({
+        setCurrentLocation({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
         setGeoError("");
       },
       () => {
-        setGeoError("위치 권한을 허용하면 주변 농장을 표시할 수 있습니다.");
+        setGeoError("위치 권한을 허용하면 현재 위치 지도를 표시할 수 있습니다.");
       }
     );
   }, []);
@@ -172,13 +191,17 @@ export default function FeedPage() {
         });
       }
 
-      if (!userLocation) {
+      const baseLocation = currentLocation ?? profileLocation;
+      if (!baseLocation) {
         setNearbyFarms(farms);
         return;
       }
 
       const toRad = (value: number) => (value * Math.PI) / 180;
-      const distanceKm = (a: typeof userLocation, b: { lat: number; lng: number }) => {
+      const distanceKm = (
+        a: typeof baseLocation,
+        b: { lat: number; lng: number }
+      ) => {
         const earthRadius = 6371;
         const dLat = toRad(b.lat - a.lat);
         const dLng = toRad(b.lng - a.lng);
@@ -191,7 +214,7 @@ export default function FeedPage() {
       };
 
       const filtered = farms.filter(
-        (farm) => distanceKm(userLocation, farm) <= NEARBY_RADIUS_KM
+        (farm) => distanceKm(baseLocation, farm) <= NEARBY_RADIUS_KM
       );
       setNearbyFarms(filtered);
     };
@@ -200,20 +223,17 @@ export default function FeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [session, userLocation]);
+  }, [session, profileLocation, currentLocation]);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadPosts = async () => {
-      if (!regionCode) return;
-
       let query = supabase
         .from("posts")
         .select(
           "id,user_id,title,content,region_code,region_name,price,category,created_at,status"
         )
-        .eq("region_code", regionCode)
         .order("created_at", { ascending: false });
 
       query = query.or(
@@ -236,15 +256,27 @@ export default function FeedPage() {
       const { data } = await query;
 
       if (cancelled) return;
-      setPosts(data ?? []);
+      setAllPosts(data ?? []);
 
       const sellerIds = Array.from(
         new Set((data ?? []).map((post) => post.user_id))
       );
+      let info: Record<
+        string,
+        {
+          farmName: string | null;
+          address: string | null;
+          ratingAvg: number | null;
+          ratingCount: number;
+          lat: number | null;
+          lng: number | null;
+        }
+      > = {};
+
       if (sellerIds.length > 0) {
         const { data: sellerData } = await supabase
           .from("seller_verifications")
-          .select("user_id,farm_name,address")
+          .select("user_id,farm_name,address,latitude,longitude")
           .eq("status", "approved")
           .in("user_id", sellerIds);
 
@@ -268,15 +300,6 @@ export default function FeedPage() {
           });
         });
 
-        const info: Record<
-          string,
-          {
-            farmName: string | null;
-            address: string | null;
-            ratingAvg: number | null;
-            ratingCount: number;
-          }
-        > = {};
         (sellerData ?? []).forEach((seller) => {
           const entry = ratingMap.get(seller.user_id);
           info[seller.user_id] = {
@@ -286,12 +309,12 @@ export default function FeedPage() {
               ? Number((entry.total / entry.count).toFixed(1))
               : null,
             ratingCount: entry ? entry.count : 0,
+            lat: seller.latitude != null ? Number(seller.latitude) : null,
+            lng: seller.longitude != null ? Number(seller.longitude) : null,
           };
         });
-        setSellerInfo(info);
-      } else {
-        setSellerInfo({});
       }
+      setSellerInfo(info);
 
       const postIds = (data ?? []).map((post) => post.id);
       if (postIds.length > 0) {
@@ -314,6 +337,37 @@ export default function FeedPage() {
         setThumbnails({});
       }
 
+      if (profileLocation) {
+        const toRad = (value: number) => (value * Math.PI) / 180;
+        const distanceKm = (
+          a: typeof profileLocation,
+          b: { lat: number; lng: number }
+        ) => {
+          const earthRadius = 6371;
+          const dLat = toRad(b.lat - a.lat);
+          const dLng = toRad(b.lng - a.lng);
+          const lat1 = toRad(a.lat);
+          const lat2 = toRad(b.lat);
+          const h =
+            Math.sin(dLat / 2) ** 2 +
+            Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+          return 2 * earthRadius * Math.asin(Math.sqrt(h));
+        };
+        const local = (data ?? []).filter((post) => {
+          const seller = info[post.user_id];
+          if (!seller?.lat || !seller?.lng) return false;
+          return (
+            distanceKm(profileLocation, {
+              lat: seller.lat,
+              lng: seller.lng,
+            }) <= NEARBY_RADIUS_KM
+          );
+        });
+        setLocalPosts(local);
+      } else {
+        setLocalPosts([]);
+      }
+
       setLoading(false);
     };
 
@@ -321,29 +375,29 @@ export default function FeedPage() {
     return () => {
       cancelled = true;
     };
-  }, [regionCode, category, showSold, searchTerm]);
+  }, [category, showSold, searchTerm, profileLocation]);
 
   if (!session) return <p>로그인이 필요합니다.</p>;
-  if (!regionCode) {
-    return (
-      <p>
-        지역 설정이 필요합니다.{" "}
-        <Link href="/onboarding" className="underline">
-          /onboarding 이동
-        </Link>
-      </p>
-    );
-  }
   if (loading) return <Loading />;
 
+  const visibleLocalPosts =
+    scope === "both" ? localPosts.slice(0, SECTION_LIMIT) : localPosts;
+  const visibleAllPosts =
+    scope === "both" ? allPosts.slice(0, SECTION_LIMIT) : allPosts;
+
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
+    <div className="mx-auto flex h-[calc(100vh-72px)] w-full max-w-7xl flex-col gap-6">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold">오늘의 농장 상품</h1>
           <p className="text-sm text-zinc-500">
-            현재 지역: {regionName ?? regionCode}
+            현재 동네: {profileAddress ?? "미설정"}
           </p>
+          {!profileLocation && (
+            <p className="text-sm text-amber-600">
+              동네 설정이 필요합니다. 마이페이지에서 주소를 등록해주세요.
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
@@ -380,17 +434,153 @@ export default function FeedPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 grid-cols-[minmax(0,1fr)_360px]">
-        <section className="space-y-3">
-          {posts.length === 0 ? (
-            <div className="rounded-2xl border p-6 text-sm text-zinc-600">
-              이 지역에 게시글이 없어요
+      <div className="grid h-full min-h-0 flex-1 gap-6 grid-cols-[minmax(0,1fr)_360px]">
+        <section className="min-h-0 space-y-8 overflow-y-auto pr-2">
+          {(scope === "both" || scope === "local") && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">동네 농장 상품</h2>
+                {scope === "both" && (
+                  <button
+                    type="button"
+                    onClick={() => router.push("/feed/local")}
+                    className="rounded-full border border-zinc-200 px-2.5 py-1 text-sm font-semibold text-zinc-700 hover:border-zinc-900"
+                    aria-label="동네 농장 상품 더보기"
+                  >
+                    +
+                  </button>
+                )}
+              </div>
+            {!profileLocation ? (
+              <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                동네 주소를 등록하면 주변 농장 상품이 표시됩니다.
+              </div>
+            ) : localPosts.length === 0 ? (
+              <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                동네 근처에 게시글이 없어요
+              </div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleLocalPosts.map((post) => {
+                  const statusLabel =
+                    post.status === "sold"
+                      ? "거래완료"
+                      : post.status === "reserved"
+                      ? "예약중"
+                      : "판매중";
+                  const statusClass =
+                    post.status === "sold"
+                      ? "text-red-600"
+                      : post.status === "reserved"
+                      ? "text-green-600"
+                      : "text-blue-600";
+                  const priceLabel =
+                    post.price != null
+                      ? `${post.price.toLocaleString("ko-KR")}원`
+                      : "가격 미정";
+                  const thumb = thumbnails[post.id];
+                  const farmName = sellerInfo[post.user_id]?.farmName;
+                  const farmAddress = formatShortAddress(
+                    sellerInfo[post.user_id]?.address
+                  );
+                  const ratingAvg = sellerInfo[post.user_id]?.ratingAvg;
+                  const ratingCount = sellerInfo[post.user_id]?.ratingCount ?? 0;
+
+                  return (
+                    <div
+                      key={post.id}
+                      className="group rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
+                    >
+                      <Link href={`/posts/${post.id}`} className="block">
+                        <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-100">
+                          {thumb ? (
+                            <img
+                              src={thumb}
+                              alt={post.title}
+                              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                              이미지 없음
+                            </div>
+                          )}
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <h2 className="line-clamp-2 text-base font-semibold">
+                              {post.title}
+                            </h2>
+                            <span
+                              className={`text-xs font-medium ${statusClass}`}
+                            >
+                              {statusLabel}
+                            </span>
+                          </div>
+                          <div className="text-lg font-semibold">
+                            {priceLabel}
+                          </div>
+                          <div className="text-xs text-zinc-500">
+                            {post.region_name ?? post.region_code} ·{" "}
+                            {post.category ?? "카테고리 없음"}
+                          </div>
+                        </div>
+                      </Link>
+                      <div className="mt-3 space-y-1 text-xs text-zinc-600">
+                        {farmName ? (
+                          <button
+                            type="button"
+                            className="inline-flex items-center rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-900 hover:border-zinc-900"
+                            onClick={() => router.push(`/farms/${post.user_id}`)}
+                          >
+                            {farmName}
+                          </button>
+                        ) : (
+                          <span>농장 정보 없음</span>
+                        )}
+                        {farmAddress && (
+                          <div className="text-xs text-zinc-500">
+                            {farmAddress}
+                          </div>
+                        )}
+                        <div className="text-xs text-zinc-600">
+                          <span className="text-amber-500">★</span>{" "}
+                          {ratingAvg != null
+                            ? `${ratingAvg} (${ratingCount})`
+                            : "리뷰 없음"}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             </div>
-          ) : (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {posts.map((post) => {
-                const statusLabel =
-                  post.status === "sold"
+          )}
+
+          {(scope === "both" || scope === "all") && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold">전체 농장 상품</h2>
+                {scope === "both" && (
+                  <button
+                    type="button"
+                    onClick={() => router.push("/feed/all")}
+                    className="rounded-full border border-zinc-200 px-2.5 py-1 text-sm font-semibold text-zinc-700 hover:border-zinc-900"
+                    aria-label="전체 농장 상품 더보기"
+                  >
+                    +
+                  </button>
+                )}
+              </div>
+            {allPosts.length === 0 ? (
+              <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                등록된 게시글이 없어요
+              </div>
+            ) : (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleAllPosts.map((post) => {
+                  const statusLabel =
+                    post.status === "sold"
                     ? "거래완료"
                     : post.status === "reserved"
                     ? "예약중"
@@ -476,12 +666,15 @@ export default function FeedPage() {
                   </div>
                 );
               })}
+              </div>
+            )}
             </div>
           )}
         </section>
 
-        <aside className="space-y-4">
-          <div className="rounded-2xl border p-4">
+        <aside className="min-h-0">
+          <div className="sticky top-4 space-y-4">
+            <div className="rounded-2xl border p-4">
             <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-zinc-400">
               <span>주변 농장</span>
               <span className="rounded-full border px-2 py-0.5 text-[10px] text-zinc-500">
@@ -498,9 +691,10 @@ export default function FeedPage() {
             {geoError && (
               <p className="mt-2 text-xs text-amber-600">{geoError}</p>
             )}
-          </div>
-          <div className="rounded-2xl border p-4 text-sm text-zinc-600">
-            현재 위치 기반으로 {NEARBY_RADIUS_KM}km 이내 농장을 표시합니다.
+            </div>
+            <div className="rounded-2xl border p-4 text-sm text-zinc-600">
+              현재 위치 기준으로 {NEARBY_RADIUS_KM}km 이내 농장을 표시합니다.
+            </div>
           </div>
         </aside>
       </div>
