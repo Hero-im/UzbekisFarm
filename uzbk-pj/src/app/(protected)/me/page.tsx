@@ -55,14 +55,22 @@ export default function MePage() {
   const [farmName, setFarmName] = useState("");
   const [ownerName, setOwnerName] = useState("");
   const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
+  const [roadAddress, setRoadAddress] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [addressDetail, setAddressDetail] = useState("");
   const [locationNote, setLocationNote] = useState("");
   const [farmDescription, setFarmDescription] = useState("");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressResults, setAddressResults] = useState<any[]>([]);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressHelp, setAddressHelp] = useState("");
   const [approvedSnapshot, setApprovedSnapshot] = useState<{
     farmName: string;
     ownerName: string;
     phone: string;
-    address: string;
+    roadAddress: string;
+    postalCode: string;
+    addressDetail: string;
     locationNote: string;
     farmDescription: string;
     licensePath: string;
@@ -107,7 +115,7 @@ export default function MePage() {
       const { data: verificationData } = await supabase
         .from("seller_verifications")
         .select(
-          "user_id,farm_name,owner_name,phone,address,location_note,description,business_license_path,status,requested_at,reviewed_at,rejection_reason"
+          "user_id,farm_name,owner_name,phone,address,postal_code,address_detail,location_note,description,business_license_path,status,requested_at,reviewed_at,rejection_reason,latitude,longitude"
         )
         .eq("user_id", session.user.id)
         .maybeSingle();
@@ -125,7 +133,9 @@ export default function MePage() {
         farmName: verificationData?.farm_name ?? "",
         ownerName: verificationData?.owner_name ?? "",
         phone: verificationData?.phone ?? "",
-        address: verificationData?.address ?? "",
+        roadAddress: verificationData?.address ?? "",
+        postalCode: verificationData?.postal_code ?? "",
+        addressDetail: verificationData?.address_detail ?? "",
         locationNote: verificationData?.location_note ?? "",
         farmDescription: verificationData?.description ?? "",
         licensePath: verificationData?.business_license_path ?? "",
@@ -133,7 +143,9 @@ export default function MePage() {
       setFarmName(snapshot.farmName);
       setOwnerName(snapshot.ownerName);
       setPhone(snapshot.phone);
-      setAddress(snapshot.address);
+      setRoadAddress(snapshot.roadAddress);
+      setPostalCode(snapshot.postalCode);
+      setAddressDetail(snapshot.addressDetail);
       setLocationNote(snapshot.locationNote);
       setFarmDescription(snapshot.farmDescription);
       setApprovedSnapshot(
@@ -234,6 +246,71 @@ export default function MePage() {
     setLicenseFile(file);
   };
 
+  const handleAddressSearch = async () => {
+    const query = addressQuery.trim();
+    if (!query) {
+      setVerificationMsg("도로명 주소를 입력하세요.");
+      return;
+    }
+    setAddressLoading(true);
+    setVerificationMsg("");
+    setAddressHelp("");
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(
+          query
+        )}`,
+        {
+          headers: {
+            "Accept-Language": "ko",
+          },
+        }
+      );
+      const data = (await response.json()) as any[];
+      setAddressResults(data ?? []);
+      if (!data?.length) {
+        setAddressHelp(
+          "검색된 주소가 없습니다. 도시/구/동까지 포함해 다시 입력해보세요."
+        );
+      }
+    } catch {
+      setVerificationMsg("주소 검색에 실패했습니다.");
+      setAddressHelp("예시: Tashkent, Afrosiyob ko'chasi 7");
+    } finally {
+      setAddressLoading(false);
+    }
+  };
+
+  const handleSelectAddress = (result: any) => {
+    const display = result?.display_name ?? "";
+    const postcode = result?.address?.postcode ?? "";
+    setRoadAddress(display);
+    setPostalCode(postcode);
+    setAddressQuery("");
+    setAddressResults([]);
+    setAddressHelp("");
+  };
+
+  const geocodeAddress = async (value: string) => {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+      value
+    )}`;
+    const response = await fetch(url, {
+      headers: {
+        "Accept-Language": "ko",
+      },
+    });
+    if (!response.ok) {
+      throw new Error("geocode_failed");
+    }
+    const data = (await response.json()) as Array<{
+      lat: string;
+      lon: string;
+    }>;
+    if (!data.length) return null;
+    return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+  };
+
   const getLicensePath = (file: File) => {
     const ext = file.name.includes(".")
       ? "." + file.name.split(".").pop()
@@ -253,7 +330,7 @@ export default function MePage() {
     const trimmedFarmName = farmName.trim();
     const trimmedOwnerName = ownerName.trim();
     const trimmedPhone = phone.trim();
-    const trimmedAddress = address.trim();
+    const trimmedAddress = roadAddress.trim();
 
     if (!trimmedFarmName || !trimmedOwnerName || !trimmedPhone || !trimmedAddress) {
       setVerificationMsg("필수 정보를 모두 입력하세요.");
@@ -261,11 +338,11 @@ export default function MePage() {
     }
 
     const licenseChanged = Boolean(licenseFile);
+    const farmNameChanged = (verification?.farm_name ?? "") !== trimmedFarmName;
+    const ownerNameChanged = (verification?.owner_name ?? "") !== trimmedOwnerName;
+    const addressChanged = (verification?.address ?? "") !== trimmedAddress;
     const coreChanged =
-      (verification?.farm_name ?? "") !== trimmedFarmName ||
-      (verification?.owner_name ?? "") !== trimmedOwnerName ||
-      (verification?.address ?? "") !== trimmedAddress ||
-      licenseChanged;
+      farmNameChanged || ownerNameChanged || addressChanged || licenseChanged;
 
     const requiresReview =
       verification?.status === "approved" && isEditingApproved && coreChanged;
@@ -279,7 +356,9 @@ export default function MePage() {
           setFarmName(approvedSnapshot.farmName);
           setOwnerName(approvedSnapshot.ownerName);
           setPhone(approvedSnapshot.phone);
-          setAddress(approvedSnapshot.address);
+          setRoadAddress(approvedSnapshot.roadAddress);
+          setPostalCode(approvedSnapshot.postalCode);
+          setAddressDetail(approvedSnapshot.addressDetail);
           setLocationNote(approvedSnapshot.locationNote);
           setFarmDescription(approvedSnapshot.farmDescription);
           setLicenseFile(null);
@@ -291,6 +370,27 @@ export default function MePage() {
 
     setVerificationLoading(true);
     setVerificationMsg("");
+
+    let latitude = verification?.latitude ?? null;
+    let longitude = verification?.longitude ?? null;
+    const shouldGeocode =
+      addressChanged || latitude == null || longitude == null;
+    if (shouldGeocode) {
+      try {
+        const coords = await geocodeAddress(trimmedAddress);
+        if (!coords) {
+          setVerificationMsg("주소를 찾을 수 없습니다. 다시 확인해주세요.");
+          setVerificationLoading(false);
+          return;
+        }
+        latitude = coords.lat;
+        longitude = coords.lng;
+      } catch {
+        setVerificationMsg("주소 좌표 변환에 실패했습니다.");
+        setVerificationLoading(false);
+        return;
+      }
+    }
 
     let licensePath = verification?.business_license_path ?? null;
     if (licenseFile) {
@@ -319,9 +419,13 @@ export default function MePage() {
       owner_name: trimmedOwnerName,
       phone: trimmedPhone,
       address: trimmedAddress,
+      postal_code: postalCode.trim() || null,
+      address_detail: addressDetail.trim() || null,
       location_note: locationNote.trim() || null,
       description: farmDescription.trim() || null,
       business_license_path: licensePath,
+      latitude,
+      longitude,
       status:
         verification?.status === "approved" && isEditingApproved
           ? requiresReview
@@ -374,7 +478,9 @@ export default function MePage() {
         farmName: saved.farm_name ?? "",
         ownerName: saved.owner_name ?? "",
         phone: saved.phone ?? "",
-        address: saved.address ?? "",
+        roadAddress: saved.address ?? "",
+        postalCode: saved.postal_code ?? "",
+        addressDetail: saved.address_detail ?? "",
         locationNote: saved.location_note ?? "",
         farmDescription: saved.description ?? "",
         licensePath: saved.business_license_path ?? "",
@@ -488,7 +594,7 @@ export default function MePage() {
           * 표시된 항목은 심사 필요 항목입니다. 변경 시 재심사가 필요할 수
           있습니다.
         </p>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <label className="space-y-1 text-sm">
             <span className="font-medium">
               농장 이름 <span className="text-red-500">*</span>
@@ -525,15 +631,72 @@ export default function MePage() {
               disabled={verification?.status === "approved" && !isEditingApproved}
             />
           </label>
-          <label className="space-y-1 text-sm">
+          <div className="space-y-2 text-sm md:col-span-2">
             <span className="font-medium">
               농장 주소 <span className="text-red-500">*</span>
             </span>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                className="w-full rounded border px-3 py-2"
+                placeholder="도로명 주소를 검색하세요"
+                value={addressQuery}
+                onChange={(e) => setAddressQuery(e.target.value)}
+                disabled={verification?.status === "approved" && !isEditingApproved}
+              />
+              <button
+                className="whitespace-nowrap rounded border px-4 py-2 text-xs text-zinc-700"
+                type="button"
+                onClick={handleAddressSearch}
+                disabled={
+                  addressLoading ||
+                  (verification?.status === "approved" && !isEditingApproved)
+                }
+              >
+                {addressLoading ? "검색 중..." : "주소 검색"}
+              </button>
+            </div>
+            {addressResults.length > 0 && (
+              <div className="max-h-40 overflow-auto rounded border">
+                {addressResults.map((result, index) => (
+                  <button
+                    key={`${result.place_id}-${index}`}
+                    type="button"
+                    className="block w-full border-b px-3 py-2 text-left text-xs hover:bg-zinc-50"
+                    onClick={() => handleSelectAddress(result)}
+                  >
+                    {result.display_name}
+                  </button>
+                ))}
+              </div>
+            )}
+            {addressHelp && (
+              <p className="text-xs text-zinc-500">{addressHelp}</p>
+            )}
             <input
               className="w-full rounded border px-3 py-2"
-              placeholder="예: 서울시 ... "
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
+              placeholder="선택된 도로명 주소"
+              value={roadAddress}
+              readOnly
+            />
+          </div>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">우편번호</span>
+            <input
+              className="w-full rounded border px-3 py-2"
+              placeholder="우편번호"
+              value={postalCode}
+              readOnly
+            />
+          </label>
+          <label className="space-y-1 text-sm">
+            <span className="font-medium">상세 주소</span>
+            <input
+              className="w-full rounded border px-3 py-2"
+              placeholder="상세 주소"
+              value={addressDetail}
+              onChange={(e) => setAddressDetail(e.target.value)}
               disabled={verification?.status === "approved" && !isEditingApproved}
             />
           </label>

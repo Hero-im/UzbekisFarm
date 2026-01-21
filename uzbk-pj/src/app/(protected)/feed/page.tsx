@@ -1,10 +1,11 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import Loading from "@/components/Loading";
+import FarmMap, { FarmMarker } from "@/components/FarmMap";
 
 type Post = {
   id: string;
@@ -19,6 +20,8 @@ type Post = {
 };
 
 const CATEGORIES = ["전체", "채소", "과일", "곡물", "기타"];
+const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 };
+const NEARBY_RADIUS_KM = 25;
 
 export default function FeedPage() {
   const { session } = useAuth();
@@ -30,6 +33,17 @@ export default function FeedPage() {
   const [showSold, setShowSold] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
+  const [userLocation, setUserLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [geoError, setGeoError] = useState("");
+  const [nearbyFarms, setNearbyFarms] = useState<FarmMarker[]>([]);
+
+  const mapCenter = useMemo(
+    () => userLocation ?? DEFAULT_CENTER,
+    [userLocation]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -52,6 +66,114 @@ export default function FeedPage() {
       cancelled = true;
     };
   }, [session]);
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGeoError("브라우저에서 위치 정보를 지원하지 않습니다.");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setGeoError("");
+      },
+      () => {
+        setGeoError("위치 권한을 허용하면 주변 농장을 표시할 수 있습니다.");
+      }
+    );
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadFarms = async () => {
+      if (!session) return;
+      const { data } = await supabase
+        .from("seller_verifications")
+        .select("user_id,farm_name,address,latitude,longitude")
+        .eq("status", "approved")
+        .not("latitude", "is", null)
+        .not("longitude", "is", null);
+
+      if (cancelled) return;
+
+      const farms = (data ?? [])
+        .map((row) => ({
+          id: row.user_id,
+          name: row.farm_name ?? "농장",
+          address: row.address,
+          lat: Number(row.latitude),
+          lng: Number(row.longitude),
+          detailUrl: `/farms/${row.user_id}`,
+        }))
+        .filter((farm) => !Number.isNaN(farm.lat) && !Number.isNaN(farm.lng));
+
+      const farmIds = farms.map((farm) => farm.id);
+      if (farmIds.length > 0) {
+        const { data: reviewData } = await supabase
+          .from("reviews")
+          .select("reviewee_id,rating")
+          .in("reviewee_id", farmIds);
+
+        const ratingMap = new Map<
+          string,
+          { total: number; count: number }
+        >();
+        (reviewData ?? []).forEach((review) => {
+          const entry = ratingMap.get(review.reviewee_id) ?? {
+            total: 0,
+            count: 0,
+          };
+          ratingMap.set(review.reviewee_id, {
+            total: entry.total + review.rating,
+            count: entry.count + 1,
+          });
+        });
+
+        farms.forEach((farm) => {
+          const entry = ratingMap.get(farm.id);
+          if (entry) {
+            farm.ratingAvg = Number((entry.total / entry.count).toFixed(1));
+            farm.ratingCount = entry.count;
+          } else {
+            farm.ratingAvg = null;
+            farm.ratingCount = 0;
+          }
+        });
+      }
+
+      if (!userLocation) {
+        setNearbyFarms(farms);
+        return;
+      }
+
+      const toRad = (value: number) => (value * Math.PI) / 180;
+      const distanceKm = (a: typeof userLocation, b: { lat: number; lng: number }) => {
+        const earthRadius = 6371;
+        const dLat = toRad(b.lat - a.lat);
+        const dLng = toRad(b.lng - a.lng);
+        const lat1 = toRad(a.lat);
+        const lat2 = toRad(b.lat);
+        const h =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+        return 2 * earthRadius * Math.asin(Math.sqrt(h));
+      };
+
+      const filtered = farms.filter(
+        (farm) => distanceKm(userLocation, farm) <= NEARBY_RADIUS_KM
+      );
+      setNearbyFarms(filtered);
+    };
+
+    loadFarms();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, userLocation]);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,17 +376,25 @@ export default function FeedPage() {
 
         <aside className="space-y-4">
           <div className="rounded-2xl border p-4">
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-400">
-              주변 농장
+            <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-zinc-400">
+              <span>주변 농장</span>
+              <span className="rounded-full border px-2 py-0.5 text-[10px] text-zinc-500">
+                {nearbyFarms.length}곳
+              </span>
             </div>
-            <div className="mt-3 h-[420px] rounded-xl border bg-gradient-to-br from-zinc-50 to-zinc-100">
-              <div className="flex h-full items-center justify-center text-xs text-zinc-400">
-                지도 영역 (준비 중)
-              </div>
+            <div className="mt-3 h-[420px] rounded-xl border">
+              <FarmMap
+                center={mapCenter}
+                farms={nearbyFarms}
+                radiusKm={NEARBY_RADIUS_KM}
+              />
             </div>
+            {geoError && (
+              <p className="mt-2 text-xs text-amber-600">{geoError}</p>
+            )}
           </div>
           <div className="rounded-2xl border p-4 text-sm text-zinc-600">
-            현재 위치 주변의 농장 데이터를 준비하고 있어요.
+            현재 위치 기반으로 {NEARBY_RADIUS_KM}km 이내 농장을 표시합니다.
           </div>
         </aside>
       </div>
