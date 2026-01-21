@@ -19,6 +19,7 @@ export default function NewPostPage() {
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [regionCode, setRegionCode] = useState("");
   const [regionName, setRegionName] = useState("");
+  const [address, setAddress] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -35,7 +36,7 @@ export default function NewPostPage() {
       if (!session) return;
       const { data } = await supabase
         .from("profiles")
-        .select("region_code,region_name")
+        .select("address,postal_code")
         .eq("id", session.user.id)
         .single();
 
@@ -46,8 +47,9 @@ export default function NewPostPage() {
         .maybeSingle();
 
       if (cancelled) return;
-      setRegionCode(data?.region_code ?? "");
-      setRegionName(data?.region_name ?? "");
+      setAddress(data?.address ?? "");
+      setRegionCode(data?.postal_code ?? "");
+      setRegionName(data?.address ?? "");
       setSellerStatus((verification?.status ?? "none") as typeof sellerStatus);
     };
 
@@ -90,8 +92,8 @@ export default function NewPostPage() {
       setMessage("판매자 인증 승인 후 등록할 수 있습니다.");
       return;
     }
-    if (!regionCode) {
-      setMessage("먼저 /onboarding에서 지역을 설정하세요.");
+    if (!address) {
+      setMessage("먼저 마이페이지에서 동네를 설정하세요.");
       return;
     }
 
@@ -174,7 +176,7 @@ export default function NewPostPage() {
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">/posts/new</h1>
       <p className="text-sm text-zinc-600">
-        지역: {regionName || regionCode || "미설정"}
+        동네: {regionName || regionCode || "미설정"}
       </p>
       {sellerStatus !== "approved" && (
         <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">

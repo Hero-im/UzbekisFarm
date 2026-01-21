@@ -1,29 +1,10 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import Loading from "@/components/Loading";
-
-const REGIONS = [
-  { code: "11", name: "서울" },
-  { code: "26", name: "부산" },
-  { code: "27", name: "대구" },
-  { code: "28", name: "인천" },
-  { code: "29", name: "광주" },
-  { code: "30", name: "대전" },
-  { code: "31", name: "울산" },
-  { code: "41", name: "경기" },
-  { code: "42", name: "강원" },
-  { code: "43", name: "충북" },
-  { code: "44", name: "충남" },
-  { code: "45", name: "전북" },
-  { code: "46", name: "전남" },
-  { code: "47", name: "경북" },
-  { code: "48", name: "경남" },
-  { code: "50", name: "제주" },
-];
 
 const LICENSE_BUCKET = "seller-licenses";
 const MAX_LICENSE_MB = 5;
@@ -38,12 +19,8 @@ export default function MePage() {
   const [reviewTab, setReviewTab] = useState<"received" | "given">("received");
 
   const [nickname, setNickname] = useState("");
-  const [regionCode, setRegionCode] = useState("");
-  const [regionName, setRegionName] = useState("");
-  const [search, setSearch] = useState("");
-
   const [nicknameMsg, setNicknameMsg] = useState("");
-  const [regionMsg, setRegionMsg] = useState("");
+  const [addressMsg, setAddressMsg] = useState("");
 
   const [verification, setVerification] = useState<any | null>(null);
   const [verificationMsg, setVerificationMsg] = useState("");
@@ -76,11 +53,17 @@ export default function MePage() {
     licensePath: string;
   } | null>(null);
 
-  const filtered = useMemo(() => {
-    const q = search.trim();
-    if (!q) return REGIONS;
-    return REGIONS.filter((r) => r.name.includes(q) || r.code.includes(q));
-  }, [search]);
+  const [profileRoadAddress, setProfileRoadAddress] = useState("");
+  const [profilePostalCode, setProfilePostalCode] = useState("");
+  const [profileAddressDetail, setProfileAddressDetail] = useState("");
+  const [profileAddressQuery, setProfileAddressQuery] = useState("");
+  const [profileAddressResults, setProfileAddressResults] = useState<any[]>([]);
+  const [profileAddressLoading, setProfileAddressLoading] = useState(false);
+  const [profileAddressHelp, setProfileAddressHelp] = useState("");
+  const [profileCoords, setProfileCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,7 +73,9 @@ export default function MePage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("nickname,region_code,region_name")
+        .select(
+          "nickname,address,postal_code,address_detail,latitude,longitude"
+        )
         .eq("id", session.user.id)
         .single();
 
@@ -123,8 +108,15 @@ export default function MePage() {
       if (cancelled) return;
 
       setNickname(profile?.nickname ?? "");
-      setRegionCode(profile?.region_code ?? "");
-      setRegionName(profile?.region_name ?? "");
+      setProfileRoadAddress(profile?.address ?? "");
+      setProfilePostalCode(profile?.postal_code ?? "");
+      setProfileAddressDetail(profile?.address_detail ?? "");
+      if (profile?.latitude != null && profile?.longitude != null) {
+        setProfileCoords({
+          lat: Number(profile.latitude),
+          lng: Number(profile.longitude),
+        });
+      }
       setPosts(postData ?? []);
       setReceivedReviews(reviewData ?? []);
       setGivenReviews(givenReviewData ?? []);
@@ -209,29 +201,89 @@ export default function MePage() {
     setNicknameMsg("닉네임 저장 완료");
   };
 
-  const handleSelect = (value: string) => {
-    const selected = REGIONS.find((region) => region.code === value);
-    if (!selected) return;
-    setRegionCode(selected.code);
-    setRegionName(selected.name);
+  const handleProfileAddressSearch = async () => {
+    const query = profileAddressQuery.trim();
+    if (!query) {
+      setAddressMsg("도로명 주소를 입력하세요.");
+      return;
+    }
+    setProfileAddressLoading(true);
+    setProfileAddressHelp("");
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(
+          query
+        )}`,
+        {
+          headers: {
+            "Accept-Language": "ko",
+          },
+        }
+      );
+      const data = (await response.json()) as any[];
+      setProfileAddressResults(data ?? []);
+      if (!data?.length) {
+        setProfileAddressHelp(
+          "검색된 주소가 없습니다. 도시/구/동까지 포함해 다시 입력해보세요."
+        );
+      }
+    } catch {
+      setProfileAddressHelp("예시: Tashkent, Afrosiyob ko'chasi 7");
+    } finally {
+      setProfileAddressLoading(false);
+    }
   };
 
-  const handleRegionSave = async () => {
+  const handleSelectProfileAddress = (result: any) => {
+    const display = result?.display_name ?? "";
+    const postcode = result?.address?.postcode ?? "";
+    const lat = Number(result?.lat);
+    const lng = Number(result?.lon);
+    setProfileRoadAddress(display);
+    setProfilePostalCode(postcode);
+    setProfileAddressQuery("");
+    setProfileAddressResults([]);
+    setProfileAddressHelp("");
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      setProfileCoords({ lat, lng });
+    }
+  };
+
+  const handleProfileAddressSave = async () => {
     if (!session) return;
-    if (!regionCode || !regionName) {
-      setRegionMsg("지역 코드/이름을 입력하거나 선택하세요.");
+    const address = profileRoadAddress.trim();
+    if (!address) {
+      setAddressMsg("동네 주소를 검색해 선택하세요.");
       return;
+    }
+    let coords = profileCoords;
+    if (!coords) {
+      try {
+        const next = await geocodeAddress(address);
+        if (!next) {
+          setAddressMsg("주소를 찾을 수 없습니다. 다시 검색해주세요.");
+          return;
+        }
+        coords = next;
+        setProfileCoords(next);
+      } catch {
+        setAddressMsg("주소 좌표 변환에 실패했습니다.");
+        return;
+      }
     }
     const { error } = await supabase.from("profiles").upsert({
       id: session.user.id,
-      region_code: regionCode,
-      region_name: regionName,
+      address,
+      postal_code: profilePostalCode.trim() || null,
+      address_detail: profileAddressDetail.trim() || null,
+      latitude: coords.lat,
+      longitude: coords.lng,
     });
     if (error) {
-      setRegionMsg(error.message);
+      setAddressMsg(error.message);
       return;
     }
-    setRegionMsg("지역 변경 완료");
+    setAddressMsg("동네 변경 완료");
   };
 
   const handleLicenseChange = (file: File | null) => {
@@ -544,32 +596,66 @@ export default function MePage() {
       </section>
 
       <section className="space-y-2 border-b pb-6">
-        <h2 className="font-medium">지역 변경</h2>
+        <h2 className="font-medium">동네 변경</h2>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            className="w-full max-w-sm rounded border px-3 py-2"
+            placeholder="도로명 주소를 검색하세요"
+            value={profileAddressQuery}
+            onChange={(e) => setProfileAddressQuery(e.target.value)}
+          />
+          <button
+            type="button"
+            className="whitespace-nowrap rounded border px-3 py-2 text-sm"
+            onClick={handleProfileAddressSearch}
+          >
+            {profileAddressLoading ? "검색 중..." : "주소 검색"}
+          </button>
+        </div>
+        {profileAddressResults.length > 0 && (
+          <div className="max-h-40 overflow-auto rounded border text-xs">
+            {profileAddressResults.map((result, index) => (
+              <button
+                key={`${result.place_id}-${index}`}
+                type="button"
+                className="block w-full border-b px-3 py-2 text-left hover:bg-zinc-50"
+                onClick={() => handleSelectProfileAddress(result)}
+              >
+                {result.display_name}
+              </button>
+            ))}
+          </div>
+        )}
+        {profileAddressHelp && (
+          <p className="text-xs text-zinc-500">{profileAddressHelp}</p>
+        )}
         <input
           className="w-full max-w-sm rounded border px-3 py-2"
-          placeholder="지역 검색 (예: 서울)"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          placeholder="선택된 도로명 주소"
+          value={profileRoadAddress}
+          readOnly
         />
-        <select
-          className="w-full max-w-sm rounded border px-3 py-2"
-          value={regionCode}
-          onChange={(e) => handleSelect(e.target.value)}
-        >
-          <option value="">지역을 선택하세요</option>
-          {filtered.map((r) => (
-            <option key={r.code} value={r.code}>
-              {r.name}
-            </option>
-          ))}
-        </select>
+        <div className="grid w-full max-w-sm gap-2 sm:grid-cols-2">
+          <input
+            className="rounded border px-3 py-2"
+            placeholder="우편번호"
+            value={profilePostalCode}
+            readOnly
+          />
+          <input
+            className="rounded border px-3 py-2"
+            placeholder="상세 주소"
+            value={profileAddressDetail}
+            onChange={(e) => setProfileAddressDetail(e.target.value)}
+          />
+        </div>
         <button
           className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer"
-          onClick={handleRegionSave}
+          onClick={handleProfileAddressSave}
         >
-          지역 저장
+          동네 저장
         </button>
-        {regionMsg && <p className="text-sm text-zinc-600">{regionMsg}</p>}
+        {addressMsg && <p className="text-sm text-zinc-600">{addressMsg}</p>}
       </section>
 
       <section className="space-y-3 border-b pb-6">

@@ -24,7 +24,8 @@ type Post = {
 const CATEGORIES = ["전체", "채소", "과일", "곡물", "기타"];
 const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 };
 const NEARBY_RADIUS_KM = 25;
-const SECTION_LIMIT = 6;
+const SECTION_LIMIT = 3;
+const SECTION_EXPANDED = 9;
 
 export default function FeedPage() {
   const router = useRouter();
@@ -61,6 +62,10 @@ export default function FeedPage() {
       }
     >
   >({});
+  const [isLocalExpanded, setIsLocalExpanded] = useState(false);
+  const [isAllExpanded, setIsAllExpanded] = useState(false);
+  const [localOffset, setLocalOffset] = useState(0);
+  const [allOffset, setAllOffset] = useState(0);
 
   const mapCenter = useMemo(
     () => currentLocation ?? profileLocation ?? DEFAULT_CENTER,
@@ -380,13 +385,50 @@ export default function FeedPage() {
   if (!session) return <p>로그인이 필요합니다.</p>;
   if (loading) return <Loading />;
 
-  const visibleLocalPosts =
-    scope === "both" ? localPosts.slice(0, SECTION_LIMIT) : localPosts;
-  const visibleAllPosts =
-    scope === "both" ? allPosts.slice(0, SECTION_LIMIT) : allPosts;
+  const localLimit = scope === "both"
+    ? (isLocalExpanded ? SECTION_EXPANDED : SECTION_LIMIT)
+    : localPosts.length;
+  const allLimit = scope === "both"
+    ? (isAllExpanded ? SECTION_EXPANDED : SECTION_LIMIT)
+    : allPosts.length;
+
+  const visibleLocalPosts = localPosts.slice(localOffset, localOffset + localLimit);
+  const visibleAllPosts = allPosts.slice(allOffset, allOffset + allLimit);
+
+  const localTotalPages = Math.max(
+    1,
+    Math.ceil(localPosts.length / Math.max(localLimit, 1))
+  );
+  const localCurrentPage = Math.min(
+    localTotalPages - 1,
+    Math.floor(localOffset / Math.max(localLimit, 1))
+  );
+  const localMaxOffset = Math.max(
+    (localTotalPages - 1) * localLimit,
+    0
+  );
+  const allTotalPages = Math.max(
+    1,
+    Math.ceil(allPosts.length / Math.max(allLimit, 1))
+  );
+  const allCurrentPage = Math.min(
+    allTotalPages - 1,
+    Math.floor(allOffset / Math.max(allLimit, 1))
+  );
+  const allMaxOffset = Math.max((allTotalPages - 1) * allLimit, 0);
+
+  const handleLocalToggle = () => {
+    setIsLocalExpanded((prev) => !prev);
+    setLocalOffset(0);
+  };
+
+  const handleAllToggle = () => {
+    setIsAllExpanded((prev) => !prev);
+    setAllOffset(0);
+  };
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-72px)] w-full max-w-7xl flex-col gap-6">
+    <div className="mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[1400px] flex-col gap-6 px-6 pb-16">
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold">오늘의 농장 상품</h1>
@@ -434,8 +476,8 @@ export default function FeedPage() {
         </div>
       </div>
 
-      <div className="grid h-full min-h-0 flex-1 gap-6 grid-cols-[minmax(0,1fr)_360px]">
-        <section className="min-h-0 space-y-8 overflow-y-auto pr-2">
+      <div className="grid gap-6 grid-cols-[minmax(0,1fr)_360px]">
+        <section className="min-h-0 space-y-10 pr-2">
           {(scope === "both" || scope === "local") && (
             <div className="space-y-3">
               <div className="flex items-center justify-between">
@@ -443,25 +485,86 @@ export default function FeedPage() {
                 {scope === "both" && (
                   <button
                     type="button"
-                    onClick={() => router.push("/feed/local")}
+                    onClick={handleLocalToggle}
                     className="rounded-full border border-zinc-200 px-2.5 py-1 text-sm font-semibold text-zinc-700 hover:border-zinc-900"
                     aria-label="동네 농장 상품 더보기"
                   >
-                    +
+                    {isLocalExpanded ? "-" : "+"}
                   </button>
                 )}
               </div>
-            {!profileLocation ? (
-              <div className="rounded-2xl border p-6 text-sm text-zinc-600">
-                동네 주소를 등록하면 주변 농장 상품이 표시됩니다.
-              </div>
-            ) : localPosts.length === 0 ? (
-              <div className="rounded-2xl border p-6 text-sm text-zinc-600">
-                동네 근처에 게시글이 없어요
-              </div>
-            ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {visibleLocalPosts.map((post) => {
+              {!profileLocation ? (
+                <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                  동네 주소를 등록하면 주변 농장 상품이 표시됩니다.
+                </div>
+              ) : localPosts.length === 0 ? (
+                <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                  동네 근처에 게시글이 없어요
+                </div>
+              ) : (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (localOffset === 0) return;
+                      setLocalOffset((prev) => Math.max(prev - localLimit, 0));
+                    }}
+                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    aria-label="이전"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (localOffset >= localMaxOffset) return;
+                      setLocalOffset((prev) =>
+                        Math.min(prev + localLimit, localMaxOffset)
+                      );
+                    }}
+                    className="pointer-events-auto absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    aria-label="다음"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                  <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+                    {Array.from({ length: localTotalPages }).map((_, index) => (
+                      <span
+                        key={`local-dot-${index}`}
+                        className={
+                          index === localCurrentPage
+                            ? "h-1 w-6 rounded-full bg-zinc-900"
+                            : "h-1 w-2 rounded-full bg-zinc-300"
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="grid gap-6 px-16 sm:grid-cols-2 lg:grid-cols-3">
+                    {visibleLocalPosts.map((post) => {
                   const statusLabel =
                     post.status === "sold"
                       ? "거래완료"
@@ -551,9 +654,10 @@ export default function FeedPage() {
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
+                  })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -564,21 +668,82 @@ export default function FeedPage() {
                 {scope === "both" && (
                   <button
                     type="button"
-                    onClick={() => router.push("/feed/all")}
+                    onClick={handleAllToggle}
                     className="rounded-full border border-zinc-200 px-2.5 py-1 text-sm font-semibold text-zinc-700 hover:border-zinc-900"
                     aria-label="전체 농장 상품 더보기"
                   >
-                    +
+                    {isAllExpanded ? "-" : "+"}
                   </button>
                 )}
               </div>
-            {allPosts.length === 0 ? (
-              <div className="rounded-2xl border p-6 text-sm text-zinc-600">
-                등록된 게시글이 없어요
-              </div>
-            ) : (
-              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                {visibleAllPosts.map((post) => {
+              {allPosts.length === 0 ? (
+                <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                  등록된 게시글이 없어요
+                </div>
+              ) : (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (allOffset === 0) return;
+                      setAllOffset((prev) => Math.max(prev - allLimit, 0));
+                    }}
+                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    aria-label="이전"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="15 18 9 12 15 6" />
+                    </svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (allOffset >= allMaxOffset) return;
+                      setAllOffset((prev) =>
+                        Math.min(prev + allLimit, allMaxOffset)
+                      );
+                    }}
+                    className="pointer-events-auto absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    aria-label="다음"
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <polyline points="9 18 15 12 9 6" />
+                    </svg>
+                  </button>
+                  <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5">
+                    {Array.from({ length: allTotalPages }).map((_, index) => (
+                      <span
+                        key={`all-dot-${index}`}
+                        className={
+                          index === allCurrentPage
+                            ? "h-1 w-6 rounded-full bg-zinc-900"
+                            : "h-1 w-2 rounded-full bg-zinc-300"
+                        }
+                      />
+                    ))}
+                  </div>
+                  <div className="grid gap-6 px-16 sm:grid-cols-2 lg:grid-cols-3">
+                    {visibleAllPosts.map((post) => {
                   const statusLabel =
                     post.status === "sold"
                     ? "거래완료"
@@ -665,9 +830,10 @@ export default function FeedPage() {
                     </div>
                   </div>
                 );
-              })}
-              </div>
-            )}
+                  })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -675,22 +841,22 @@ export default function FeedPage() {
         <aside className="min-h-0">
           <div className="sticky top-4 space-y-4">
             <div className="rounded-2xl border p-4">
-            <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-zinc-400">
-              <span>주변 농장</span>
-              <span className="rounded-full border px-2 py-0.5 text-[10px] text-zinc-500">
-                {nearbyFarms.length}곳
-              </span>
-            </div>
-            <div className="mt-3 h-[420px] rounded-xl border">
-              <FarmMap
-                center={mapCenter}
-                farms={nearbyFarms}
-                radiusKm={NEARBY_RADIUS_KM}
-              />
-            </div>
-            {geoError && (
-              <p className="mt-2 text-xs text-amber-600">{geoError}</p>
-            )}
+              <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-zinc-400">
+                <span>주변 농장</span>
+                <span className="rounded-full border px-2 py-0.5 text-[10px] text-zinc-500">
+                  {nearbyFarms.length}곳
+                </span>
+              </div>
+              <div className="mt-3 h-[420px] rounded-xl border">
+                <FarmMap
+                  center={mapCenter}
+                  farms={nearbyFarms}
+                  radiusKm={NEARBY_RADIUS_KM}
+                />
+              </div>
+              {geoError && (
+                <p className="mt-2 text-xs text-amber-600">{geoError}</p>
+              )}
             </div>
             <div className="rounded-2xl border p-4 text-sm text-zinc-600">
               현재 위치 기준으로 {NEARBY_RADIUS_KM}km 이내 농장을 표시합니다.
@@ -698,6 +864,27 @@ export default function FeedPage() {
           </div>
         </aside>
       </div>
+
+      <footer className="mt-10 border-t border-zinc-200 pb-10 pt-8 text-sm text-zinc-600">
+        <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-2">
+            <div className="font-semibold text-zinc-800">Farm Store</div>
+            <div>운영: Uzbekis Farm</div>
+            <div>연락처: 000-0000-0000</div>
+            <div>이메일: help@uzbekisfarm.com</div>
+            <div>주소: Tashkent, Uzbekistan</div>
+          </div>
+          <div className="space-y-2">
+            <div className="font-semibold text-zinc-800">Customer</div>
+            <div>공지사항</div>
+            <div>이용약관</div>
+            <div>개인정보 처리방침</div>
+          </div>
+        </div>
+        <div className="mt-6 text-xs text-zinc-500">
+          This service provides a platform for farm-to-market listings.
+        </div>
+      </footer>
     </div>
   );
 }

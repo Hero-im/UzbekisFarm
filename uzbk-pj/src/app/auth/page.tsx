@@ -1,27 +1,8 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
-
-const REGIONS = [
-  { code: "11", name: "서울" },
-  { code: "26", name: "부산" },
-  { code: "27", name: "대구" },
-  { code: "28", name: "인천" },
-  { code: "29", name: "광주" },
-  { code: "30", name: "대전" },
-  { code: "31", name: "울산" },
-  { code: "41", name: "경기" },
-  { code: "42", name: "강원" },
-  { code: "43", name: "충북" },
-  { code: "44", name: "충남" },
-  { code: "45", name: "전북" },
-  { code: "46", name: "전남" },
-  { code: "47", name: "경북" },
-  { code: "48", name: "경남" },
-  { code: "50", name: "제주" },
-];
 
 export default function AuthPage() {
   const router = useRouter();
@@ -34,22 +15,17 @@ export default function AuthPage() {
     "unchecked" | "checking" | "available" | "taken"
   >("unchecked");
   const [nicknameCheckMessage, setNicknameCheckMessage] = useState("");
-  const [regionCode, setRegionCode] = useState("");
-  const [regionName, setRegionName] = useState("");
-  const [search, setSearch] = useState("");
-
-  const filtered = useMemo(() => {
-    const q = search.trim();
-    if (!q) return REGIONS;
-    return REGIONS.filter((r) => r.name.includes(q) || r.code.includes(q));
-  }, [search]);
-
-  const handleSelect = (value: string) => {
-    const selected = REGIONS.find((region) => region.code === value);
-    if (!selected) return;
-    setRegionCode(selected.code);
-    setRegionName(selected.name);
-  };
+  const [roadAddress, setRoadAddress] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [addressDetail, setAddressDetail] = useState("");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressResults, setAddressResults] = useState<any[]>([]);
+  const [addressLoading, setAddressLoading] = useState(false);
+  const [addressHelp, setAddressHelp] = useState("");
+  const [addressCoords, setAddressCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
   const handleNicknameCheck = async () => {
     const value = nickname.trim();
@@ -83,17 +59,88 @@ export default function AuthPage() {
     setNicknameCheckMessage("사용 가능한 닉네임입니다.");
   };
 
+  const handleAddressSearch = async () => {
+    const query = addressQuery.trim();
+    if (!query) {
+      setMessage("도로명 주소를 입력하세요.");
+      return;
+    }
+    setAddressLoading(true);
+    setAddressHelp("");
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(
+          query
+        )}`,
+        {
+          headers: {
+            "Accept-Language": "ko",
+          },
+        }
+      );
+      const data = (await response.json()) as any[];
+      setAddressResults(data ?? []);
+      if (!data?.length) {
+        setAddressHelp(
+          "검색된 주소가 없습니다. 도시/구/동까지 포함해 다시 입력해보세요."
+        );
+      }
+    } catch {
+      setAddressHelp("예시: Tashkent, Afrosiyob ko'chasi 7");
+    } finally {
+      setAddressLoading(false);
+    }
+  };
+
+  const handleSelectAddress = (result: any) => {
+    const display = result?.display_name ?? "";
+    const postcode = result?.address?.postcode ?? "";
+    const lat = Number(result?.lat);
+    const lng = Number(result?.lon);
+    setRoadAddress(display);
+    setPostalCode(postcode);
+    setAddressQuery("");
+    setAddressResults([]);
+    setAddressHelp("");
+    if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+      setAddressCoords({ lat, lng });
+    }
+  };
+
+  const geocodeAddress = async (value: string) => {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+      value
+    )}`;
+    const response = await fetch(url, {
+      headers: {
+        "Accept-Language": "ko",
+      },
+    });
+    if (!response.ok) {
+      throw new Error("geocode_failed");
+    }
+    const data = (await response.json()) as Array<{
+      lat: string;
+      lon: string;
+    }>;
+    if (!data.length) return null;
+    return { lat: Number(data[0].lat), lng: Number(data[0].lon) };
+  };
+
   const upsertProfile = async (
     user: { id: string; user_metadata?: Record<string, any> },
     defaults?: {
       nickname?: string;
-      region_code?: string;
-      region_name?: string;
+      address?: string;
+      postal_code?: string;
+      address_detail?: string;
+      latitude?: number;
+      longitude?: number;
     }
   ) => {
     const { data: existingRows } = await supabase
       .from("profiles")
-      .select("nickname,region_code,region_name")
+      .select("nickname,address,postal_code,address_detail,latitude,longitude")
       .eq("id", user.id)
       .limit(1);
 
@@ -101,8 +148,12 @@ export default function AuthPage() {
     const next = {
       id: user.id,
       nickname: existing?.nickname ?? defaults?.nickname ?? null,
-      region_code: existing?.region_code ?? defaults?.region_code ?? null,
-      region_name: existing?.region_name ?? defaults?.region_name ?? null,
+      address: existing?.address ?? defaults?.address ?? null,
+      postal_code: existing?.postal_code ?? defaults?.postal_code ?? null,
+      address_detail:
+        existing?.address_detail ?? defaults?.address_detail ?? null,
+      latitude: existing?.latitude ?? defaults?.latitude ?? null,
+      longitude: existing?.longitude ?? defaults?.longitude ?? null,
     };
 
     await supabase.from("profiles").upsert(next);
@@ -121,8 +172,16 @@ export default function AuthPage() {
         setMessage("닉네임 중복확인을 해주세요.");
         return;
       }
-      if (!regionCode || !regionName) {
-        setMessage("지역을 선택하세요.");
+      if (!roadAddress.trim()) {
+        setMessage("동네 주소를 검색해 선택하세요.");
+        return;
+      }
+      let coords = addressCoords;
+      if (!coords) {
+        coords = await geocodeAddress(roadAddress.trim());
+      }
+      if (!coords) {
+        setMessage("주소를 찾을 수 없습니다. 다시 검색해주세요.");
         return;
       }
 
@@ -132,8 +191,11 @@ export default function AuthPage() {
         options: {
           data: {
             nickname: nickname.trim(),
-            region_code: regionCode,
-            region_name: regionName,
+            address: roadAddress.trim(),
+            postal_code: postalCode.trim() || null,
+            address_detail: addressDetail.trim() || null,
+            latitude: coords.lat,
+            longitude: coords.lng,
           },
         },
       });
@@ -148,8 +210,11 @@ export default function AuthPage() {
       if (data.user && data.session) {
         await upsertProfile(data.user, {
           nickname: nickname.trim(),
-          region_code: regionCode,
-          region_name: regionName,
+          address: roadAddress.trim(),
+          postal_code: postalCode.trim() || null,
+          address_detail: addressDetail.trim() || null,
+          latitude: coords.lat,
+          longitude: coords.lng,
         });
       }
       setMessage("");
@@ -172,8 +237,11 @@ export default function AuthPage() {
     if (data.user) {
       const meta = (data.user.user_metadata ?? {}) as {
         nickname?: string;
-        region_code?: string;
-        region_name?: string;
+        address?: string;
+        postal_code?: string;
+        address_detail?: string;
+        latitude?: number;
+        longitude?: number;
       };
       await upsertProfile(data.user, meta);
     }
@@ -224,28 +292,60 @@ export default function AuthPage() {
             </section>
 
             <section className="space-y-2">
-              <h2 className="text-sm font-medium text-zinc-700">지역 설정</h2>
-              <input
-                className="rounded border px-3 py-2"
-                placeholder="지역 검색 (예: 서울)"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-
-              <div className="flex gap-2">
-                <select
-                  className="w-full rounded border px-3 py-2"
-                  value={regionCode}
-                  onChange={(e) => handleSelect(e.target.value)}
-                  required
-                >
-                  <option value="">지역을 선택하세요</option>
-                  {filtered.map((r) => (
-                    <option key={r.code} value={r.code}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+              <h2 className="text-sm font-medium text-zinc-700">동네 설정</h2>
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    className="w-full rounded border px-3 py-2"
+                    placeholder="도로명 주소를 검색하세요"
+                    value={addressQuery}
+                    onChange={(e) => setAddressQuery(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddressSearch}
+                    className="whitespace-nowrap rounded border px-3 py-2 text-sm"
+                  >
+                    {addressLoading ? "검색 중..." : "주소 검색"}
+                  </button>
+                </div>
+                {addressResults.length > 0 && (
+                  <div className="max-h-40 overflow-auto rounded border text-xs">
+                    {addressResults.map((result, index) => (
+                      <button
+                        key={`${result.place_id}-${index}`}
+                        type="button"
+                        className="block w-full border-b px-3 py-2 text-left hover:bg-zinc-50"
+                        onClick={() => handleSelectAddress(result)}
+                      >
+                        {result.display_name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {addressHelp && (
+                  <p className="text-xs text-zinc-500">{addressHelp}</p>
+                )}
+                <input
+                  className="rounded border px-3 py-2"
+                  placeholder="선택된 도로명 주소"
+                  value={roadAddress}
+                  readOnly
+                />
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    className="rounded border px-3 py-2"
+                    placeholder="우편번호"
+                    value={postalCode}
+                    readOnly
+                  />
+                  <input
+                    className="rounded border px-3 py-2"
+                    placeholder="상세 주소"
+                    value={addressDetail}
+                    onChange={(e) => setAddressDetail(e.target.value)}
+                  />
+                </div>
               </div>
             </section>
 
@@ -312,9 +412,13 @@ export default function AuthPage() {
           setNickname("");
           setNicknameCheck("unchecked");
           setNicknameCheckMessage("");
-          setRegionCode("");
-          setRegionName("");
-          setSearch("");
+          setRoadAddress("");
+          setPostalCode("");
+          setAddressDetail("");
+          setAddressQuery("");
+          setAddressResults([]);
+          setAddressHelp("");
+          setAddressCoords(null);
           setEmail("");
           setPassword("");
         }}
