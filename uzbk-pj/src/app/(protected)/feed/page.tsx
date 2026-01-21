@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import Loading from "@/components/Loading";
@@ -9,6 +10,7 @@ import FarmMap, { FarmMarker } from "@/components/FarmMap";
 
 type Post = {
   id: string;
+  user_id: string;
   title: string;
   content: string;
   region_code: string | null;
@@ -24,6 +26,7 @@ const DEFAULT_CENTER = { lat: 37.5665, lng: 126.978 };
 const NEARBY_RADIUS_KM = 25;
 
 export default function FeedPage() {
+  const router = useRouter();
   const { session } = useAuth();
   const [posts, setPosts] = useState<Post[]>([]);
   const [regionCode, setRegionCode] = useState<string | null>(null);
@@ -39,11 +42,35 @@ export default function FeedPage() {
   } | null>(null);
   const [geoError, setGeoError] = useState("");
   const [nearbyFarms, setNearbyFarms] = useState<FarmMarker[]>([]);
+  const [sellerInfo, setSellerInfo] = useState<
+    Record<
+      string,
+      {
+        farmName: string | null;
+        address: string | null;
+        ratingAvg: number | null;
+        ratingCount: number;
+      }
+    >
+  >({});
 
   const mapCenter = useMemo(
     () => userLocation ?? DEFAULT_CENTER,
     [userLocation]
   );
+
+  const formatShortAddress = (value?: string | null) => {
+    if (!value) return "";
+    if (value.includes(",")) {
+      const parts = value
+        .split(",")
+        .map((part) => part.trim())
+        .filter(Boolean);
+      return parts.slice(-2).join(", ");
+    }
+    const parts = value.split(" ").filter(Boolean);
+    return parts.slice(-2).join(" ");
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -184,7 +211,7 @@ export default function FeedPage() {
       let query = supabase
         .from("posts")
         .select(
-          "id,title,content,region_code,region_name,price,category,created_at,status"
+          "id,user_id,title,content,region_code,region_name,price,category,created_at,status"
         )
         .eq("region_code", regionCode)
         .order("created_at", { ascending: false });
@@ -210,6 +237,61 @@ export default function FeedPage() {
 
       if (cancelled) return;
       setPosts(data ?? []);
+
+      const sellerIds = Array.from(
+        new Set((data ?? []).map((post) => post.user_id))
+      );
+      if (sellerIds.length > 0) {
+        const { data: sellerData } = await supabase
+          .from("seller_verifications")
+          .select("user_id,farm_name,address")
+          .eq("status", "approved")
+          .in("user_id", sellerIds);
+
+        const { data: reviewData } = await supabase
+          .from("reviews")
+          .select("reviewee_id,rating")
+          .in("reviewee_id", sellerIds);
+
+        const ratingMap = new Map<
+          string,
+          { total: number; count: number }
+        >();
+        (reviewData ?? []).forEach((review) => {
+          const entry = ratingMap.get(review.reviewee_id) ?? {
+            total: 0,
+            count: 0,
+          };
+          ratingMap.set(review.reviewee_id, {
+            total: entry.total + review.rating,
+            count: entry.count + 1,
+          });
+        });
+
+        const info: Record<
+          string,
+          {
+            farmName: string | null;
+            address: string | null;
+            ratingAvg: number | null;
+            ratingCount: number;
+          }
+        > = {};
+        (sellerData ?? []).forEach((seller) => {
+          const entry = ratingMap.get(seller.user_id);
+          info[seller.user_id] = {
+            farmName: seller.farm_name ?? null,
+            address: seller.address ?? null,
+            ratingAvg: entry
+              ? Number((entry.total / entry.count).toFixed(1))
+              : null,
+            ratingCount: entry ? entry.count : 0,
+          };
+        });
+        setSellerInfo(info);
+      } else {
+        setSellerInfo({});
+      }
 
       const postIds = (data ?? []).map((post) => post.id);
       if (postIds.length > 0) {
@@ -305,7 +387,7 @@ export default function FeedPage() {
               이 지역에 게시글이 없어요
             </div>
           ) : (
-            <ul className="space-y-4">
+            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {posts.map((post) => {
                 const statusLabel =
                   post.status === "sold"
@@ -325,18 +407,25 @@ export default function FeedPage() {
                     : "가격 미정";
                 const thumb = thumbnails[post.id];
 
+                const farmName = sellerInfo[post.user_id]?.farmName;
+                const farmAddress = formatShortAddress(
+                  sellerInfo[post.user_id]?.address
+                );
+                const ratingAvg = sellerInfo[post.user_id]?.ratingAvg;
+                const ratingCount = sellerInfo[post.user_id]?.ratingCount ?? 0;
+
                 return (
-                  <li key={post.id}>
-                    <Link
-                      href={`/posts/${post.id}`}
-                      className="group flex gap-4 rounded-2xl border p-4 transition hover:border-zinc-300"
-                    >
-                      <div className="h-24 w-28 overflow-hidden rounded-xl bg-zinc-100">
+                  <div
+                    key={post.id}
+                    className="group rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
+                  >
+                    <Link href={`/posts/${post.id}`} className="block">
+                      <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-100">
                         {thumb ? (
                           <img
                             src={thumb}
                             alt={post.title}
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
                           />
                         ) : (
                           <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
@@ -344,33 +433,50 @@ export default function FeedPage() {
                           </div>
                         )}
                       </div>
-                      <div className="flex flex-1 flex-col gap-1">
-                        <div className="flex items-center justify-between">
-                          <h2 className="text-base font-semibold">
+                      <div className="mt-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <h2 className="line-clamp-2 text-base font-semibold">
                             {post.title}
                           </h2>
-                          <span
-                            className={`text-xs font-medium ${statusClass}`}
-                          >
+                          <span className={`text-xs font-medium ${statusClass}`}>
                             {statusLabel}
                           </span>
                         </div>
-                        <div className="text-sm text-zinc-600 line-clamp-2">
-                          {post.content}
-                        </div>
-                        <div className="text-sm font-semibold">
-                          {priceLabel}
-                        </div>
+                        <div className="text-lg font-semibold">{priceLabel}</div>
                         <div className="text-xs text-zinc-500">
                           {post.region_name ?? post.region_code} ·{" "}
                           {post.category ?? "카테고리 없음"}
                         </div>
                       </div>
                     </Link>
-                  </li>
+                    <div className="mt-3 space-y-1 text-xs text-zinc-600">
+                      {farmName ? (
+                        <button
+                          type="button"
+                          className="inline-flex items-center rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-900 hover:border-zinc-900"
+                          onClick={() => router.push(`/farms/${post.user_id}`)}
+                        >
+                          {farmName}
+                        </button>
+                      ) : (
+                        <span>농장 정보 없음</span>
+                      )}
+                      {farmAddress && (
+                        <div className="text-xs text-zinc-500">
+                          {farmAddress}
+                        </div>
+                      )}
+                      <div className="text-xs text-zinc-600">
+                        <span className="text-amber-500">★</span>{" "}
+                        {ratingAvg != null
+                          ? `${ratingAvg} (${ratingCount})`
+                          : "리뷰 없음"}
+                      </div>
+                    </div>
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
         </section>
 
