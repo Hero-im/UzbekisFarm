@@ -19,6 +19,7 @@ type Post = {
   category: string | null;
   created_at: string;
   status: string | null;
+  stock_quantity: number | null;
 };
 
 const CATEGORIES = ["전체", "채소", "과일", "곡물", "기타"];
@@ -237,14 +238,14 @@ export default function FeedPage() {
       let query = supabase
         .from("posts")
         .select(
-          "id,user_id,title,content,region_code,region_name,price,category,created_at,status"
+          "id,user_id,title,content,region_code,region_name,price,category,created_at,status,stock_quantity"
         )
         .order("created_at", { ascending: false });
 
       query = query.or(
         showSold
-          ? "status.is.null,status.eq.active,status.eq.reserved,status.eq.sold"
-          : "status.is.null,status.eq.active,status.eq.reserved"
+          ? "status.is.null,status.eq.ON_SALE,status.eq.RESERVED,status.eq.COMPLETED"
+          : "status.is.null,status.eq.ON_SALE,status.eq.RESERVED"
       );
 
       const trimmed = searchTerm.trim();
@@ -455,7 +456,7 @@ export default function FeedPage() {
               checked={showSold}
               onChange={(e) => setShowSold(e.target.checked)}
             />
-            거래완료 포함
+            판매종료 포함
           </label>
         </div>
 
@@ -565,96 +566,110 @@ export default function FeedPage() {
                   </div>
                   <div className="grid gap-6 px-16 sm:grid-cols-2 lg:grid-cols-3">
                     {visibleLocalPosts.map((post) => {
-                  const statusLabel =
-                    post.status === "sold"
-                      ? "거래완료"
-                      : post.status === "reserved"
-                      ? "예약중"
-                      : "판매중";
-                  const statusClass =
-                    post.status === "sold"
-                      ? "text-red-600"
-                      : post.status === "reserved"
-                      ? "text-green-600"
-                      : "text-blue-600";
-                  const priceLabel =
-                    post.price != null
-                      ? `${post.price.toLocaleString("ko-KR")}원`
-                      : "가격 미정";
-                  const thumb = thumbnails[post.id];
-                  const farmName = sellerInfo[post.user_id]?.farmName;
-                  const farmAddress = formatShortAddress(
-                    sellerInfo[post.user_id]?.address
-                  );
-                  const ratingAvg = sellerInfo[post.user_id]?.ratingAvg;
-                  const ratingCount = sellerInfo[post.user_id]?.ratingCount ?? 0;
+                      const safeStatus = post.status ?? "ON_SALE";
+                      const statusLabel =
+                        safeStatus === "COMPLETED"
+                          ? "판매종료"
+                          : safeStatus === "RESERVED"
+                          ? "예약중"
+                          : "판매중";
+                      const statusClass =
+                        safeStatus === "COMPLETED"
+                          ? "text-red-600"
+                          : safeStatus === "RESERVED"
+                          ? "text-green-600"
+                          : "text-blue-600";
+                      const priceLabel =
+                        post.price != null
+                          ? `${post.price.toLocaleString("ko-KR")}원`
+                          : "가격 미정";
+                      const thumb = thumbnails[post.id];
+                      const farmName = sellerInfo[post.user_id]?.farmName;
+                      const farmAddress = formatShortAddress(
+                        sellerInfo[post.user_id]?.address
+                      );
+                      const ratingAvg = sellerInfo[post.user_id]?.ratingAvg;
+                      const ratingCount =
+                        sellerInfo[post.user_id]?.ratingCount ?? 0;
+                      const isSoldOut =
+                        (post.stock_quantity ?? 0) <= 0 &&
+                        post.stock_quantity !== null;
 
-                  return (
-                    <div
-                      key={post.id}
-                      className="group rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
-                    >
-                      <Link href={`/posts/${post.id}`} className="block">
-                        <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-100">
-                          {thumb ? (
-                            <img
-                              src={thumb}
-                              alt={post.title}
-                              className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-                            />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
-                              이미지 없음
+                      return (
+                        <div
+                          key={post.id}
+                          className="group rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
+                        >
+                          <Link href={`/posts/${post.id}`} className="block">
+                            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-100">
+                              {thumb ? (
+                                <img
+                                  src={thumb}
+                                  alt={post.title}
+                                  className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                                  이미지 없음
+                                </div>
+                              )}
                             </div>
-                          )}
+                            <div className="mt-4 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h2 className="line-clamp-2 text-base font-semibold">
+                                  {post.title}
+                                </h2>
+                                <div className="flex items-center gap-2">
+                                  {isSoldOut && (
+                                    <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                                      SOLD OUT
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`text-xs font-medium ${statusClass}`}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-lg font-semibold">
+                                {priceLabel}
+                              </div>
+                              <div className="text-xs text-zinc-500">
+                                {post.region_name ?? post.region_code} ·{" "}
+                                {post.category ?? "카테고리 없음"}
+                              </div>
+                            </div>
+                          </Link>
+                          <div className="mt-3 space-y-1 text-xs text-zinc-600">
+                            {farmName ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-900 hover:border-zinc-900"
+                                onClick={() =>
+                                  router.push(`/farms/${post.user_id}`)
+                                }
+                              >
+                                {farmName}
+                              </button>
+                            ) : (
+                              <span>농장 정보 없음</span>
+                            )}
+                            {farmAddress && (
+                              <div className="text-xs text-zinc-500">
+                                {farmAddress}
+                              </div>
+                            )}
+                            <div className="text-xs text-zinc-600">
+                              <span className="text-amber-500">★</span>{" "}
+                              {ratingAvg != null
+                                ? `${ratingAvg} (${ratingCount})`
+                                : "리뷰 없음"}
+                            </div>
+                          </div>
                         </div>
-                        <div className="mt-4 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <h2 className="line-clamp-2 text-base font-semibold">
-                              {post.title}
-                            </h2>
-                            <span
-                              className={`text-xs font-medium ${statusClass}`}
-                            >
-                              {statusLabel}
-                            </span>
-                          </div>
-                          <div className="text-lg font-semibold">
-                            {priceLabel}
-                          </div>
-                          <div className="text-xs text-zinc-500">
-                            {post.region_name ?? post.region_code} ·{" "}
-                            {post.category ?? "카테고리 없음"}
-                          </div>
-                        </div>
-                      </Link>
-                      <div className="mt-3 space-y-1 text-xs text-zinc-600">
-                        {farmName ? (
-                          <button
-                            type="button"
-                            className="inline-flex items-center rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-900 hover:border-zinc-900"
-                            onClick={() => router.push(`/farms/${post.user_id}`)}
-                          >
-                            {farmName}
-                          </button>
-                        ) : (
-                          <span>농장 정보 없음</span>
-                        )}
-                        {farmAddress && (
-                          <div className="text-xs text-zinc-500">
-                            {farmAddress}
-                          </div>
-                        )}
-                        <div className="text-xs text-zinc-600">
-                          <span className="text-amber-500">★</span>{" "}
-                          {ratingAvg != null
-                            ? `${ratingAvg} (${ratingCount})`
-                            : "리뷰 없음"}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                  })}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -744,93 +759,111 @@ export default function FeedPage() {
                   </div>
                   <div className="grid gap-6 px-16 sm:grid-cols-2 lg:grid-cols-3">
                     {visibleAllPosts.map((post) => {
-                  const statusLabel =
-                    post.status === "sold"
-                    ? "거래완료"
-                    : post.status === "reserved"
-                    ? "예약중"
-                    : "판매중";
-                const statusClass =
-                  post.status === "sold"
-                    ? "text-red-600"
-                    : post.status === "reserved"
-                    ? "text-green-600"
-                    : "text-blue-600";
-                const priceLabel =
-                  post.price != null
-                    ? `${post.price.toLocaleString("ko-KR")}원`
-                    : "가격 미정";
-                const thumb = thumbnails[post.id];
+                      const safeStatus = post.status ?? "ON_SALE";
+                      const statusLabel =
+                        safeStatus === "COMPLETED"
+                          ? "판매종료"
+                          : safeStatus === "RESERVED"
+                          ? "예약중"
+                          : "판매중";
+                      const statusClass =
+                        safeStatus === "COMPLETED"
+                          ? "text-red-600"
+                          : safeStatus === "RESERVED"
+                          ? "text-green-600"
+                          : "text-blue-600";
+                      const priceLabel =
+                        post.price != null
+                          ? `${post.price.toLocaleString("ko-KR")}원`
+                          : "가격 미정";
+                      const thumb = thumbnails[post.id];
 
-                const farmName = sellerInfo[post.user_id]?.farmName;
-                const farmAddress = formatShortAddress(
-                  sellerInfo[post.user_id]?.address
-                );
-                const ratingAvg = sellerInfo[post.user_id]?.ratingAvg;
-                const ratingCount = sellerInfo[post.user_id]?.ratingCount ?? 0;
+                      const farmName = sellerInfo[post.user_id]?.farmName;
+                      const farmAddress = formatShortAddress(
+                        sellerInfo[post.user_id]?.address
+                      );
+                      const ratingAvg = sellerInfo[post.user_id]?.ratingAvg;
+                      const ratingCount =
+                        sellerInfo[post.user_id]?.ratingCount ?? 0;
+                      const isSoldOut =
+                        (post.stock_quantity ?? 0) <= 0 &&
+                        post.stock_quantity !== null;
 
-                return (
-                  <div
-                    key={post.id}
-                    className="group rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
-                  >
-                    <Link href={`/posts/${post.id}`} className="block">
-                      <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-100">
-                        {thumb ? (
-                          <img
-                            src={thumb}
-                            alt={post.title}
-                            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
-                            이미지 없음
-                          </div>
-                        )}
-                      </div>
-                      <div className="mt-4 space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                          <h2 className="line-clamp-2 text-base font-semibold">
-                            {post.title}
-                          </h2>
-                          <span className={`text-xs font-medium ${statusClass}`}>
-                            {statusLabel}
-                          </span>
-                        </div>
-                        <div className="text-lg font-semibold">{priceLabel}</div>
-                        <div className="text-xs text-zinc-500">
-                          {post.region_name ?? post.region_code} ·{" "}
-                          {post.category ?? "카테고리 없음"}
-                        </div>
-                      </div>
-                    </Link>
-                    <div className="mt-3 space-y-1 text-xs text-zinc-600">
-                      {farmName ? (
-                        <button
-                          type="button"
-                          className="inline-flex items-center rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-900 shadow-sm hover:border-zinc-900"
-                          onClick={() => router.push(`/farms/${post.user_id}`)}
+                      return (
+                        <div
+                          key={post.id}
+                          className="group rounded-2xl border bg-white p-4 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
                         >
-                          {farmName}
-                        </button>
-                      ) : (
-                        <span>농장 정보 없음</span>
-                      )}
-                      {farmAddress && (
-                        <div className="text-xs text-zinc-500">
-                          {farmAddress}
+                          <Link href={`/posts/${post.id}`} className="block">
+                            <div className="aspect-[4/3] w-full overflow-hidden rounded-xl bg-zinc-100">
+                              {thumb ? (
+                                <img
+                                  src={thumb}
+                                  alt={post.title}
+                                  className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.02]"
+                                />
+                              ) : (
+                                <div className="flex h-full w-full items-center justify-center text-xs text-zinc-400">
+                                  이미지 없음
+                                </div>
+                              )}
+                            </div>
+                            <div className="mt-4 space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <h2 className="line-clamp-2 text-base font-semibold">
+                                  {post.title}
+                                </h2>
+                                <div className="flex items-center gap-2">
+                                  {isSoldOut && (
+                                    <span className="rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">
+                                      SOLD OUT
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`text-xs font-medium ${statusClass}`}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="text-lg font-semibold">
+                                {priceLabel}
+                              </div>
+                              <div className="text-xs text-zinc-500">
+                                {post.region_name ?? post.region_code} ·{" "}
+                                {post.category ?? "카테고리 없음"}
+                              </div>
+                            </div>
+                          </Link>
+                          <div className="mt-3 space-y-1 text-xs text-zinc-600">
+                            {farmName ? (
+                              <button
+                                type="button"
+                                className="inline-flex items-center rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-900 shadow-sm hover:border-zinc-900"
+                                onClick={() =>
+                                  router.push(`/farms/${post.user_id}`)
+                                }
+                              >
+                                {farmName}
+                              </button>
+                            ) : (
+                              <span>농장 정보 없음</span>
+                            )}
+                            {farmAddress && (
+                              <div className="text-xs text-zinc-500">
+                                {farmAddress}
+                              </div>
+                            )}
+                            <div className="text-xs text-zinc-600">
+                              <span className="text-amber-500">★</span>{" "}
+                              {ratingAvg != null
+                                ? `${ratingAvg} (${ratingCount})`
+                                : "리뷰 없음"}
+                            </div>
+                          </div>
                         </div>
-                      )}
-                      <div className="text-xs text-zinc-600">
-                        <span className="text-amber-500">★</span>{" "}
-                        {ratingAvg != null
-                          ? `${ratingAvg} (${ratingCount})`
-                          : "리뷰 없음"}
-                      </div>
-                    </div>
-                  </div>
-                );
-                  })}
+                      );
+                    })}
                   </div>
                 </div>
               )}

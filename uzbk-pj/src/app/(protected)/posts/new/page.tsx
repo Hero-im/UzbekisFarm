@@ -1,11 +1,14 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 
 const CATEGORIES = ["채소", "과일", "곡물", "기타"];
+const FARMING_METHODS = ["유기농", "무농약", "저농약", "일반"];
+const UNIT_OPTIONS = ["kg", "g", "박스", "개"];
+const DELIVERY_TYPES = ["직거래", "팜스토어 배달", "개인 배달"];
 const MAX_SIZE_MB = 5;
 
 export default function NewPostPage() {
@@ -17,17 +20,29 @@ export default function NewPostPage() {
   const [price, setPrice] = useState("");
   const [quantity, setQuantity] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
+  const [farmingMethod, setFarmingMethod] = useState(FARMING_METHODS[0]);
+  const [harvestDate, setHarvestDate] = useState("");
+  const [unit, setUnit] = useState(UNIT_OPTIONS[0]);
+  const [unitSize, setUnitSize] = useState("");
+  const [deliveryType, setDeliveryType] = useState(DELIVERY_TYPES[0]);
   const [regionCode, setRegionCode] = useState("");
   const [regionName, setRegionName] = useState("");
   const [address, setAddress] = useState("");
 
   const [files, setFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadedCount, setUploadedCount] = useState(0);
   const [message, setMessage] = useState("");
   const [sellerStatus, setSellerStatus] = useState<
     "none" | "pending" | "approved" | "rejected"
   >("none");
+
+  const inputBase =
+    "w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+  const selectBase =
+    "rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+  const labelText = "font-medium text-zinc-800 drop-shadow-sm";
 
   useEffect(() => {
     let cancelled = false;
@@ -59,6 +74,17 @@ export default function NewPostPage() {
     };
   }, [session]);
 
+  const previewUrls = useMemo(
+    () => files.map((file) => URL.createObjectURL(file)),
+    [files]
+  );
+
+  useEffect(() => {
+    return () => {
+      previewUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [previewUrls]);
+
   const handleFiles = (list: FileList | null) => {
     if (!list) return;
     const selected = Array.from(list);
@@ -73,6 +99,30 @@ export default function NewPostPage() {
 
     setFiles(selected);
     setMessage("");
+  };
+
+  const formatNumber = (value: string) => {
+    const digits = value.replace(/[^\d]/g, "");
+    if (!digits) return "";
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  };
+
+  const handlePriceChange = (value: string) => {
+    setPrice(formatNumber(value));
+  };
+
+  const handleUnitSizeChange = (value: string) => {
+    const cleaned = value.replace(/[^\d.]/g, "");
+    const parts = cleaned.split(".");
+    if (parts.length > 2) return;
+    const normalized =
+      parts.length === 2 ? `${parts[0]}.${parts[1]}` : parts[0];
+    setUnitSize(normalized);
+  };
+
+  const handleQuantityChange = (value: string) => {
+    const cleaned = value.replace(/[^\d]/g, "");
+    setQuantity(cleaned);
   };
 
   const getSafeFileName = (file: File, index: number) => {
@@ -96,6 +146,22 @@ export default function NewPostPage() {
       setMessage("먼저 마이페이지에서 동네를 설정하세요.");
       return;
     }
+    if (!title.trim()) {
+      alert("상품명을 입력해주세요.");
+      return;
+    }
+    if (!category) {
+      alert("카테고리를 선택해주세요.");
+      return;
+    }
+    if (!price) {
+      alert("판매 가격을 입력해주세요.");
+      return;
+    }
+    if (!quantity) {
+      alert("총 재고 수량을 입력해주세요.");
+      return;
+    }
 
     setUploading(true);
     setUploadedCount(0);
@@ -109,9 +175,12 @@ export default function NewPostPage() {
         content: description,
         region_code: regionCode,
         region_name: regionName,
-        price: price ? Number(price) : null,
-        quantity: quantity ? Number(quantity) : null,
-        status: "active",
+        price: price ? Number(price.replace(/,/g, "")) : null,
+        stock_quantity: quantity ? Number(quantity) : null,
+        unit_size: unitSize ? Number(unitSize) : null,
+        unit,
+        delivery_type: deliveryType,
+        status: "ON_SALE",
         category,
       })
       .select("id")
@@ -174,7 +243,7 @@ export default function NewPostPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">/posts/new</h1>
+      <h1 className="text-2xl font-bold">상품 등록</h1>
       <p className="text-sm text-zinc-600">
         동네: {regionName || regionCode || "미설정"}
       </p>
@@ -185,60 +254,219 @@ export default function NewPostPage() {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <input
-          className="w-full rounded border px-3 py-2"
-          placeholder="제목"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
-        <textarea
-          className="w-full rounded border px-3 py-2"
-          placeholder="설명"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          required
-        />
-        <select
-          className="w-full rounded border px-3 py-2"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div
+          className={`rounded border-2 border-dashed p-4 text-sm transition ${
+            isDragging
+              ? "border-zinc-900 bg-zinc-50"
+              : "border-zinc-300 bg-white"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            handleFiles(e.dataTransfer.files);
+          }}
         >
-          {CATEGORIES.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <input
-          className="w-full rounded border px-3 py-2"
-          placeholder="가격(선택)"
-          value={price}
-          onChange={(e) => setPrice(e.target.value)}
-        />
-        <input
-          className="w-full rounded border px-3 py-2"
-          placeholder="수량(선택)"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-        />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className={labelText}>이미지 업로드</p>
+              <p className="text-xs text-zinc-500">
+                드래그 앤 드롭 또는 파일 선택 (최대 {MAX_SIZE_MB}MB)
+              </p>
+            </div>
+            <label className="inline-flex cursor-pointer items-center justify-center rounded bg-zinc-900 px-3 py-2 text-xs text-white">
+              파일 선택
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => handleFiles(e.target.files)}
+              />
+            </label>
+          </div>
+          {files.length > 0 && (
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {previewUrls.map((src, index) => (
+                <div
+                  key={`${files[index]?.name}-${index}`}
+                  className="aspect-square overflow-hidden rounded border border-zinc-200 bg-zinc-50"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={src}
+                    alt={`업로드 이미지 ${index + 1}`}
+                    className="h-full w-full object-cover"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
-        <input
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={(e) => handleFiles(e.target.files)}
-        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="space-y-1 text-sm">
+            <span className={labelText}>제목</span>
+            <input
+              className={inputBase}
+              placeholder="예: 꿀고구마, 못난이 감자 (상품명을 입력하세요)"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              required
+            />
+          </label>
 
-        <button
-          className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer"
-          disabled={uploading}
-        >
-          {uploading
-            ? `업로드 중... (${uploadedCount}/${files.length})`
-            : "등록"}
-        </button>
+          <label className="space-y-1 text-sm">
+            <span className={labelText}>카테고리</span>
+            <select
+              className={inputBase}
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="space-y-2 text-sm md:col-span-2">
+            <span className={labelText}>배송 유형</span>
+            <div className="flex flex-wrap gap-2">
+              {DELIVERY_TYPES.map((type) => {
+                const selected = type === deliveryType;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`rounded-full border px-3 py-1 text-xs transition ${
+                      selected
+                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                    }`}
+                    onClick={() => setDeliveryType(type)}
+                  >
+                    {type}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-2 text-sm md:col-span-2">
+            <span className={labelText}>재배 방식</span>
+            <div className="flex flex-wrap gap-2">
+              {FARMING_METHODS.map((method) => {
+                const selected = method === farmingMethod;
+                return (
+                  <button
+                    key={method}
+                    type="button"
+                    className={`rounded-full border px-3 py-1 text-xs transition ${
+                      selected
+                        ? "border-zinc-900 bg-zinc-900 text-white"
+                        : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50"
+                    }`}
+                    onClick={() => setFarmingMethod(method)}
+                  >
+                    {method}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <label className="space-y-1 text-sm">
+            <span className={labelText}>수확일</span>
+            <input
+              type="date"
+              className={inputBase}
+              value={harvestDate}
+              onChange={(e) => setHarvestDate(e.target.value)}
+            />
+          </label>
+
+          <div className="space-y-2 text-sm md:col-span-2">
+            <span className={labelText}>판매 단위 (규격)</span>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <input
+                className={inputBase}
+                placeholder="예: 5"
+                value={unitSize}
+                inputMode="decimal"
+                onChange={(e) => handleUnitSizeChange(e.target.value)}
+              />
+              <select
+                className={`${selectBase} text-sm`}
+                value={unit}
+                onChange={(e) => setUnit(e.target.value)}
+              >
+                {UNIT_OPTIONS.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-2 text-sm md:col-span-2">
+            <span className={labelText}>가격 및 재고</span>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="flex items-center gap-2">
+                <input
+                  className={inputBase}
+                  placeholder="0"
+                  value={price}
+                  inputMode="numeric"
+                  onChange={(e) => handlePriceChange(e.target.value)}
+                />
+                <span className="text-xs text-zinc-600">원</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  className={inputBase}
+                  placeholder="예: 100"
+                  value={quantity}
+                  inputMode="numeric"
+                  onChange={(e) => handleQuantityChange(e.target.value)}
+                />
+                <span className="text-xs text-zinc-600">개</span>
+              </div>
+            </div>
+            <p className="text-xs text-zinc-500">
+              현재 판매 가능한 총 수량을 입력하세요.
+            </p>
+          </div>
+
+          <label className="space-y-1 text-sm md:col-span-2">
+            <span className={labelText}>설명</span>
+            <textarea
+              className={inputBase}
+              placeholder="예: 재배 과정, 맛의 특징, 보관 방법, 추천 요리 등을 적어주세요. 자세히 적을수록 판매가 잘 됩니다!"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end">
+          <button
+            className="w-full rounded bg-lime-600 px-5 py-3 text-white shadow-sm hover:bg-lime-500 sm:w-auto"
+            disabled={uploading}
+          >
+            {uploading
+              ? `업로드 중... (${uploadedCount}/${files.length})`
+              : "등록"}
+          </button>
+        </div>
       </form>
 
       {message && <p className="text-sm text-zinc-600">{message}</p>}

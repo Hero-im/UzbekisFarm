@@ -130,16 +130,17 @@ export default function FarmDetailPage() {
         ) : (
           <ul className="space-y-4">
             {posts.map((post) => {
+              const safeStatus = post.status ?? "ON_SALE";
               const statusLabel =
-                post.status === "sold"
-                  ? "거래완료"
-                  : post.status === "reserved"
+                safeStatus === "COMPLETED"
+                  ? "판매종료"
+                  : safeStatus === "RESERVED"
                   ? "예약중"
                   : "판매중";
               const statusClass =
-                post.status === "sold"
+                safeStatus === "COMPLETED"
                   ? "text-red-600"
-                  : post.status === "reserved"
+                  : safeStatus === "RESERVED"
                   ? "text-green-600"
                   : "text-blue-600";
               const priceLabel =

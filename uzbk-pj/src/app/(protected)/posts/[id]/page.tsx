@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import Loading from "@/components/Loading";
@@ -15,11 +15,13 @@ type Post = {
   region_name: string | null;
   region_code: string | null;
   price: number | null;
-  quantity: number | null;
+  stock_quantity: number | null;
+  unit_size: number | null;
+  unit: string | null;
+  delivery_type: string | null;
   category: string | null;
   created_at: string;
   status: string | null;
-  sold_room_id: string | null;
 };
 
 type ImageRow = {
@@ -35,20 +37,28 @@ type Seller = {
   region_code: string | null;
 };
 
+type ShippingAddress = {
+  id: string;
+  label: string | null;
+  receiver_name: string | null;
+  receiver_phone: string | null;
+  postal_code: string | null;
+  road_address: string | null;
+  address_detail: string | null;
+  is_default: boolean | null;
+};
+
 const STATUS_OPTIONS = [
-  { value: "active", label: "판매중", className: "text-blue-600" },
-  { value: "reserved", label: "예약중", className: "text-green-600" },
-  { value: "sold", label: "거래완료", className: "text-red-600" },
+  { value: "ON_SALE", label: "판매중", className: "text-blue-600" },
+  { value: "RESERVED", label: "예약중", className: "text-green-600" },
+  { value: "COMPLETED", label: "판매종료", className: "text-red-600" },
 ];
 
-type BuyerRoom = {
-  id: string;
-  buyer_id: string | null;
-};
 
 export default function PostDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
   const postId = params.id as string;
 
@@ -58,19 +68,84 @@ export default function PostDetailPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [current, setCurrent] = useState(0);
-  const [isBuyer, setIsBuyer] = useState(false);
-  const [isSoldBuyer, setIsSoldBuyer] = useState(false);
-  const [hasReviewed, setHasReviewed] = useState(false);
-  const [rating, setRating] = useState(5);
-  const [reviewContent, setReviewContent] = useState("");
-  const [reviewMessage, setReviewMessage] = useState("");
-  const [buyerRooms, setBuyerRooms] = useState<BuyerRoom[]>([]);
-  const [buyersById, setBuyersById] = useState<Record<string, string>>({});
-  const [selectedSoldRoomId, setSelectedSoldRoomId] = useState<string | null>(
-    null
-  );
-  const [soldMessage, setSoldMessage] = useState("");
-  const [statusDraft, setStatusDraft] = useState("active");
+  const [statusDraft, setStatusDraft] = useState("ON_SALE");
+  const [isBuyOpen, setIsBuyOpen] = useState(false);
+  const [buyQuantity, setBuyQuantity] = useState("1");
+  const [shippingAddresses, setShippingAddresses] = useState<
+    ShippingAddress[]
+  >([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("manual");
+  const [addressLabel, setAddressLabel] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhone, setRecipientPhone] = useState("");
+  const [recipientCountry, setRecipientCountry] = useState("+82");
+  const [postalCode, setPostalCode] = useState("");
+  const [roadAddress, setRoadAddress] = useState("");
+  const [addressDetail, setAddressDetail] = useState("");
+  const [addressMemo, setAddressMemo] = useState("");
+  const [buyAddressQuery, setBuyAddressQuery] = useState("");
+  const [buyAddressResults, setBuyAddressResults] = useState<any[]>([]);
+  const [buyAddressLoading, setBuyAddressLoading] = useState(false);
+  const [buyAddressHelp, setBuyAddressHelp] = useState("");
+  const [isAddressPickerOpen, setIsAddressPickerOpen] = useState(false);
+  const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [addressPickerSnapshot, setAddressPickerSnapshot] = useState("manual");
+  const [saveAddress, setSaveAddress] = useState(false);
+  const [saveAsDefault, setSaveAsDefault] = useState(false);
+  const [buyError, setBuyError] = useState("");
+  const [buyLoading, setBuyLoading] = useState(false);
+  const [autoBuyOpened, setAutoBuyOpened] = useState(false);
+  const [addressPickerError, setAddressPickerError] = useState("");
+  const [useManualAddress, setUseManualAddress] = useState(false);
+  const [memoPreset, setMemoPreset] = useState("문 앞에 놔주세요");
+  const formatPhone = (value: string) => {
+    const digits = value.replace(/[^\d]/g, "");
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 7) {
+      return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    }
+    if (digits.length <= 11) {
+      return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+    }
+    return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(
+      7,
+      11
+    )}`;
+  };
+
+  const splitPhone = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return { country: "+82", local: "" };
+    if (trimmed.startsWith("+")) {
+      const [country, ...rest] = trimmed.split(" ");
+      return { country, local: rest.join(" ") };
+    }
+    return { country: "+82", local: trimmed };
+  };
+
+  const resetManualAddress = () => {
+    setSelectedAddressId("manual");
+    setUseManualAddress(true);
+    setAddressLabel("");
+    setRecipientName("");
+    setRecipientPhone("");
+    setRecipientCountry("+82");
+    setPostalCode("");
+    setRoadAddress("");
+    setAddressDetail("");
+    setAddressMemo("");
+    setBuyAddressQuery("");
+    setBuyAddressResults([]);
+    setBuyAddressHelp("");
+    setSaveAddress(false);
+    setSaveAsDefault(false);
+  };
+
+  useEffect(() => {
+    if (isAddingAddress) {
+      resetManualAddress();
+    }
+  }, [isAddingAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +154,7 @@ export default function PostDetailPage() {
       const { data: postData, error } = await supabase
         .from("posts")
         .select(
-          "id,user_id,title,description,content,region_name,region_code,price,quantity,category,created_at,status,sold_room_id"
+          "id,user_id,title,description,content,region_name,region_code,price,category,created_at,status,stock_quantity,unit_size,unit,delivery_type"
         )
         .eq("id", postId)
         .single();
@@ -117,66 +192,8 @@ export default function PostDetailPage() {
         .eq("id", postData.user_id)
         .single();
 
-      if (session) {
-        const { data: roomData } = await supabase
-          .from("chat_rooms")
-          .select("id")
-          .eq("post_id", postData.id)
-          .eq("buyer_id", session.user.id)
-          .maybeSingle();
-        setIsBuyer(Boolean(roomData));
-
-        if (postData.sold_room_id) {
-          const { data: soldRoom } = await supabase
-            .from("chat_rooms")
-            .select("buyer_id")
-            .eq("id", postData.sold_room_id)
-            .maybeSingle();
-          setIsSoldBuyer(soldRoom?.buyer_id === session.user.id);
-        } else {
-          setIsSoldBuyer(false);
-        }
-
-        const { data: reviewData } = await supabase
-          .from("reviews")
-          .select("id")
-          .eq("post_id", postData.id)
-          .eq("reviewer_id", session.user.id)
-          .maybeSingle();
-        setHasReviewed(Boolean(reviewData));
-      }
-
-      if (session?.user.id === postData.user_id) {
-        const { data: roomList } = await supabase
-          .from("chat_rooms")
-          .select("id,buyer_id")
-          .eq("post_id", postData.id);
-
-        const buyerRoomList = (roomList ?? []).filter(
-          (room) => room.buyer_id
-        ) as BuyerRoom[];
-        setBuyerRooms(buyerRoomList);
-
-        const buyerIds = buyerRoomList
-          .map((room) => room.buyer_id)
-          .filter((id): id is string => Boolean(id));
-
-        if (buyerIds.length > 0) {
-          const { data: buyerProfiles } = await supabase
-            .from("profiles")
-            .select("id,nickname")
-            .in("id", buyerIds);
-
-          const nextBuyers: Record<string, string> = {};
-          (buyerProfiles ?? []).forEach((profile) => {
-            nextBuyers[profile.id] = profile.nickname ?? "미설정";
-          });
-          setBuyersById(nextBuyers);
-        }
-      }
-
       setPost(postData as Post);
-      setStatusDraft(postData.status ?? "active");
+      setStatusDraft(postData.status ?? "ON_SALE");
       setImages(imgRows);
       setSeller(sellerData ?? null);
       setLoading(false);
@@ -188,20 +205,103 @@ export default function PostDetailPage() {
     };
   }, [postId, session]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAddresses = async () => {
+      if (!session) return;
+      const { data } = await supabase
+        .from("shipping_addresses")
+        .select(
+          "id,label,receiver_name,receiver_phone,postal_code,road_address,address_detail,is_default"
+        )
+        .eq("user_id", session.user.id)
+        .order("created_at", { ascending: false });
+
+      if (cancelled) return;
+      setShippingAddresses((data ?? []) as ShippingAddress[]);
+
+      if (!isAddingAddress && !useManualAddress) {
+        const currentExists = (data ?? []).some(
+          (addr) => addr.id === selectedAddressId
+        );
+        if (!currentExists || selectedAddressId === "manual") {
+          const defaultAddress = (data ?? []).find((addr) => addr.is_default);
+          if (defaultAddress) {
+            setSelectedAddressId(defaultAddress.id);
+          } else if ((data ?? []).length > 0) {
+            setSelectedAddressId((data ?? [])[0].id);
+          }
+        }
+      }
+    };
+
+    loadAddresses();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, selectedAddressId, isAddingAddress, useManualAddress]);
+
+  useEffect(() => {
+    if (isAddingAddress || useManualAddress) return;
+    if (selectedAddressId === "manual") return;
+    const selected = shippingAddresses.find(
+      (addr) => addr.id === selectedAddressId
+    );
+    if (!selected) return;
+    setAddressLabel(selected.label ?? "");
+    setRecipientName(selected.receiver_name ?? "");
+    const parsed = splitPhone(selected.receiver_phone ?? "");
+    setRecipientCountry(parsed.country);
+    setRecipientPhone(parsed.local);
+    setPostalCode(selected.postal_code ?? "");
+    setRoadAddress(selected.road_address ?? "");
+    setAddressDetail(selected.address_detail ?? "");
+  }, [selectedAddressId, shippingAddresses, isAddingAddress, useManualAddress]);
+
   const isSeller = useMemo(() => {
     return session?.user.id === post?.user_id;
   }, [session, post]);
 
   const desc = post?.description ?? post?.content ?? "";
   const currentImage = images[current];
+  const primaryImage = currentImage?.url ?? images[0]?.url ?? null;
   const currentStatus = statusDraft;
   const statusOption =
     STATUS_OPTIONS.find((option) => option.value === currentStatus) ??
     STATUS_OPTIONS[0];
-  const showSoldPicker =
-    isSeller && currentStatus === "sold" && post?.status !== "sold";
   const priceLabel =
     post?.price != null ? `${post.price.toLocaleString("ko-KR")}원` : "가격 미정";
+  const isSoldOut = post?.stock_quantity === 0;
+  const isStockUnavailable =
+    post?.stock_quantity == null || post.stock_quantity <= 0;
+  const stockLabel =
+    post?.stock_quantity != null ? `${post.stock_quantity}개` : "재고 미정";
+  const unitLabel =
+    post?.unit_size && post?.unit ? `${post.unit_size} ${post.unit}` : null;
+  const maxBuyQuantity = post?.stock_quantity ?? 10;
+  const selectedShipping =
+    selectedAddressId !== "manual"
+      ? shippingAddresses.find((addr) => addr.id === selectedAddressId)
+      : null;
+  const shippingLabel = selectedShipping?.label ?? addressLabel.trim();
+  const shippingName =
+    selectedShipping?.receiver_name ?? recipientName.trim();
+  const shippingPhone =
+    selectedShipping?.receiver_phone ??
+    (recipientPhone ? `${recipientCountry} ${recipientPhone}` : "");
+  const shippingAddressLine =
+    selectedShipping?.road_address ?? roadAddress.trim();
+  const shippingDetailLine =
+    selectedShipping?.address_detail ?? addressDetail.trim();
+
+  useEffect(() => {
+    if (!searchParams || autoBuyOpened) return;
+    if (searchParams.get("buy") !== "1") return;
+    if (isSeller) return;
+    handleBuyClick();
+    setAutoBuyOpened(true);
+  }, [searchParams, autoBuyOpened, isSeller]);
 
   const handleDelete = async () => {
     if (!post || !session) return;
@@ -265,19 +365,336 @@ export default function PostDetailPage() {
     }
   };
 
-  const handleStatusChange = async (nextStatus: string) => {
-    if (!post || !session) return;
-    setSoldMessage("");
-    setStatusDraft(nextStatus);
+  const handleBuyAddressSearch = async () => {
+    const query = buyAddressQuery.trim();
+    if (!query) {
+      setBuyAddressHelp("도로명 주소를 입력하세요.");
+      return;
+    }
+    setBuyAddressLoading(true);
+    setBuyAddressHelp("");
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${encodeURIComponent(
+          query
+        )}`,
+        {
+          headers: {
+            "Accept-Language": "ko",
+          },
+        }
+      );
+      const data = (await response.json()) as any[];
+      setBuyAddressResults(data ?? []);
+      if (!data?.length) {
+        setBuyAddressHelp(
+          "검색된 주소가 없습니다. 도시/구/동까지 포함해 다시 입력해보세요."
+        );
+      }
+    } catch {
+      setBuyAddressHelp("예시: Tashkent, Afrosiyob ko'chasi 7");
+    } finally {
+      setBuyAddressLoading(false);
+    }
+  };
 
-    if (nextStatus === "sold") {
-      setSelectedSoldRoomId(post.sold_room_id ?? null);
+  const handleSelectBuyAddress = (result: any) => {
+    const display = result?.display_name ?? "";
+    const postcode = result?.address?.postcode ?? "";
+    setRoadAddress(display);
+    setPostalCode(postcode);
+    setBuyAddressQuery("");
+    setBuyAddressResults([]);
+    setBuyAddressHelp("");
+  };
+
+  const handleBuyClick = () => {
+    if (!session) {
+      setMessage("로그인이 필요합니다.");
+      return;
+    }
+    setBuyQuantity("1");
+    setBuyError("");
+    setSaveAddress(false);
+    setSaveAsDefault(false);
+    setUseManualAddress(false);
+    setBuyAddressQuery("");
+    setBuyAddressResults([]);
+    setBuyAddressHelp("");
+    setMemoPreset("문 앞에 놔주세요");
+    setAddressMemo("문 앞에 놔주세요");
+    const defaultAddress = shippingAddresses.find((addr) => addr.is_default);
+    if (defaultAddress) {
+      setSelectedAddressId(defaultAddress.id);
+    } else if (shippingAddresses.length > 0) {
+      setSelectedAddressId(shippingAddresses[0].id);
+    } else {
+      setSelectedAddressId("manual");
+      setAddressLabel("");
+      setRecipientName("");
+      setRecipientPhone("");
+      setRecipientCountry("+82");
+      setPostalCode("");
+      setRoadAddress("");
+      setAddressDetail("");
+      setAddressMemo("");
+    }
+    setIsBuyOpen(true);
+  };
+
+  const handlePurchase = async () => {
+    if (!post || !session) return;
+    if (post.price == null) {
+      setBuyError("가격이 설정되지 않은 상품입니다.");
+      return;
+    }
+    if (!recipientName.trim() || !recipientPhone.trim()) {
+      setBuyError("수령인 이름과 연락처를 입력하세요.");
+      return;
+    }
+    if (!roadAddress.trim()) {
+      setBuyError("도로명 주소를 입력하세요.");
+      return;
+    }
+    const quantity = Number(buyQuantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setBuyError("구매 수량을 올바르게 입력하세요.");
+      return;
+    }
+    if (!post.stock_quantity || post.stock_quantity <= 0) {
+      setBuyError("현재 재고가 없습니다.");
+      return;
+    }
+    const maxAllowed = post.stock_quantity;
+    if (quantity > maxAllowed) {
+      setBuyError(`최대 구매 수량은 ${maxAllowed}개입니다.`);
       return;
     }
 
+    setBuyLoading(true);
+    setBuyError("");
+
+    let addressId =
+      selectedAddressId !== "manual" ? selectedAddressId : null;
+
+    if (saveAddress) {
+      if (saveAsDefault) {
+        await supabase
+          .from("shipping_addresses")
+          .update({ is_default: false })
+          .eq("user_id", session.user.id);
+      }
+
+      const { data: savedAddress, error: saveError } = await supabase
+        .from("shipping_addresses")
+        .insert({
+          user_id: session.user.id,
+          label: addressLabel.trim() || null,
+          receiver_name: recipientName.trim(),
+          receiver_phone: `${recipientCountry} ${recipientPhone.trim()}`,
+          postal_code: postalCode.trim() || null,
+          road_address: roadAddress.trim(),
+          address_detail: addressDetail.trim() || null,
+          is_default: saveAsDefault,
+        })
+        .select(
+          "id,label,receiver_name,receiver_phone,postal_code,road_address,address_detail,is_default"
+        )
+        .single();
+
+      if (saveError) {
+        setBuyError(saveError.message);
+        setBuyLoading(false);
+        return;
+      }
+      if (savedAddress) {
+        addressId = savedAddress.id;
+        setSelectedAddressId(savedAddress.id);
+        setIsAddingAddress(false);
+        setShippingAddresses((prev) => {
+          const normalized = saveAsDefault
+            ? prev.map((addr) => ({ ...addr, is_default: false }))
+            : prev;
+          return [
+            savedAddress as ShippingAddress,
+            ...normalized.filter((addr) => addr.id !== savedAddress.id),
+          ];
+        });
+      }
+    }
+
+    const { data: purchaseData, error: purchaseError } = await supabase.rpc(
+      "create_order_and_decrement_stock",
+      {
+        p_post_id: post.id,
+        p_quantity: quantity,
+        p_shipping_address_id: addressId,
+        p_recipient_name: recipientName.trim(),
+        p_recipient_phone: `${recipientCountry} ${recipientPhone.trim()}`,
+        p_label: addressLabel.trim() || null,
+        p_postal_code: postalCode.trim() || null,
+        p_road_address: roadAddress.trim(),
+        p_address_detail: addressDetail.trim() || null,
+        p_memo: addressMemo.trim() || null,
+      }
+    );
+
+    if (purchaseError || !purchaseData?.length) {
+      const message = purchaseError?.message ?? "주문 처리에 실패했습니다.";
+      setBuyError(message);
+      setBuyLoading(false);
+      return;
+    }
+
+    const purchaseResult = purchaseData[0] as {
+      order_id: string;
+      remaining_stock: number | null;
+      total_price?: number | null;
+    };
+    const totalPrice = post.price * quantity;
+
+    const { data: existing } = await supabase
+      .from("chat_rooms")
+      .select("id")
+      .eq("buyer_id", session.user.id)
+      .eq("seller_id", post.user_id)
+      .eq("post_id", post.id)
+      .maybeSingle();
+
+    let roomId = existing?.id;
+    if (!roomId) {
+      const { data: created, error } = await supabase
+        .from("chat_rooms")
+        .insert({
+          buyer_id: session.user.id,
+          seller_id: post.user_id,
+          post_id: post.id,
+        })
+        .select("id")
+        .single();
+
+      if (error) {
+        setBuyError(error.message);
+        setBuyLoading(false);
+        return;
+      }
+      roomId = created?.id;
+    }
+
+    if (roomId) {
+      const orderPayload = {
+        order_id: purchaseResult.order_id,
+        post_id: post.id,
+        title: post.title,
+        quantity,
+        total_price: totalPrice,
+        thumbnail: images[0]?.url ?? null,
+      };
+
+      await supabase.from("chat_messages").insert([
+        {
+          room_id: roomId,
+          sender_id: session.user.id,
+          content: `__SYSTEM__:[${post.title}] 결제가 완료되었습니다.`,
+        },
+        {
+          room_id: roomId,
+          sender_id: session.user.id,
+          content: `__ORDER__:${JSON.stringify(orderPayload)}`,
+        },
+      ]);
+    }
+
+    setPost((prev) =>
+      prev
+        ? {
+            ...prev,
+            stock_quantity:
+              purchaseResult.remaining_stock ?? prev.stock_quantity,
+          }
+        : prev
+    );
+    setBuyLoading(false);
+    setIsBuyOpen(false);
+    if (roomId) {
+      router.push(`/chat/${roomId}`);
+    }
+  };
+
+  const handleApplyManualAddress = async () => {
+    setAddressPickerError("");
+    if (!session) {
+      setAddressPickerError("로그인이 필요합니다.");
+      return;
+    }
+    if (!recipientName.trim() || !recipientPhone.trim()) {
+      setAddressPickerError("수령인 이름과 연락처를 입력하세요.");
+      return;
+    }
+    if (!roadAddress.trim()) {
+      setAddressPickerError("도로명 주소를 입력하세요.");
+      return;
+    }
+
+    if (saveAddress) {
+      if (saveAsDefault) {
+        await supabase
+          .from("shipping_addresses")
+          .update({ is_default: false })
+          .eq("user_id", session.user.id);
+      }
+
+      const { data: savedAddress, error: saveError } = await supabase
+        .from("shipping_addresses")
+        .insert({
+          user_id: session.user.id,
+          label: addressLabel.trim() || null,
+          receiver_name: recipientName.trim(),
+          receiver_phone: `${recipientCountry} ${recipientPhone.trim()}`,
+          postal_code: postalCode.trim() || null,
+          road_address: roadAddress.trim(),
+          address_detail: addressDetail.trim() || null,
+          is_default: saveAsDefault,
+        })
+        .select(
+          "id,label,receiver_name,receiver_phone,postal_code,road_address,address_detail,is_default"
+        )
+        .single();
+
+      if (saveError || !savedAddress) {
+        setAddressPickerError(saveError?.message ?? "배송지 저장에 실패했습니다.");
+        return;
+      }
+
+      setShippingAddresses((prev) => {
+        const normalized = saveAsDefault
+          ? prev.map((addr) => ({ ...addr, is_default: false }))
+          : prev;
+        return [
+          savedAddress as ShippingAddress,
+          ...normalized.filter((addr) => addr.id !== savedAddress.id),
+        ];
+      });
+      setSelectedAddressId(savedAddress.id);
+      setUseManualAddress(false);
+      setSaveAddress(false);
+      setSaveAsDefault(false);
+    } else {
+      setSelectedAddressId("manual");
+      setUseManualAddress(true);
+    }
+
+    setIsAddingAddress(false);
+    setIsAddressPickerOpen(false);
+  };
+
+  const handleStatusChange = async (nextStatus: string) => {
+    if (!post || !session) return;
+    setStatusDraft(nextStatus);
+
     const { error } = await supabase
       .from("posts")
-      .update({ status: nextStatus, sold_room_id: null })
+      .update({ status: nextStatus })
       .eq("id", post.id);
 
     if (error) {
@@ -285,72 +702,7 @@ export default function PostDetailPage() {
       return;
     }
 
-    setPost({ ...post, status: nextStatus, sold_room_id: null });
-  };
-
-  const handleConfirmSold = async () => {
-    if (!post || !session) return;
-    if (!selectedSoldRoomId) {
-      setSoldMessage("거래 완료 상대를 선택하세요.");
-      return;
-    }
-
-    const { error } = await supabase
-      .from("posts")
-      .update({ status: "sold", sold_room_id: selectedSoldRoomId })
-      .eq("id", post.id);
-
-    if (error) {
-      setSoldMessage(error.message);
-      return;
-    }
-
-    const buyerRoom = buyerRooms.find(
-      (room) => room.id === selectedSoldRoomId
-    );
-    const buyerName =
-      (buyerRoom?.buyer_id && buyersById[buyerRoom.buyer_id]) || "구매자";
-
-    await supabase.from("chat_messages").insert({
-      room_id: selectedSoldRoomId,
-      sender_id: session.user.id,
-      content: `__SOLD__:${post.id}:${post.title}`,
-    });
-
-    setPost({ ...post, status: "sold", sold_room_id: selectedSoldRoomId });
-    setStatusDraft("sold");
-    setSoldMessage("거래 완료 처리되었습니다.");
-  };
-
-  const handleReviewSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!post || !session) return;
-    const trimmed = reviewContent.trim();
-    if (!trimmed) {
-      setReviewMessage("리뷰 내용을 입력하세요.");
-      return;
-    }
-    if (rating < 1 || rating > 5) {
-      setReviewMessage("평점을 1~5 사이로 입력하세요.");
-      return;
-    }
-
-    const { error } = await supabase.from("reviews").insert({
-      reviewer_id: session.user.id,
-      reviewee_id: post.user_id,
-      post_id: post.id,
-      rating,
-      content: trimmed,
-    });
-
-    if (error) {
-      setReviewMessage(error.message);
-      return;
-    }
-
-    setHasReviewed(true);
-    setReviewContent("");
-    setReviewMessage("리뷰가 등록되었습니다.");
+    setPost({ ...post, status: nextStatus });
   };
 
   if (loading) return <Loading />;
@@ -410,10 +762,17 @@ export default function PostDetailPage() {
               {post.category ?? "카테고리 없음"}
             </div>
             <h1 className="text-2xl font-semibold">{post.title}</h1>
-            <div className="text-3xl font-semibold">{priceLabel}</div>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="text-3xl font-semibold">{priceLabel}</div>
+              {isSoldOut && (
+                <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
+                  SOLD OUT
+                </span>
+              )}
+            </div>
             <div className="text-sm text-zinc-500">
-              {post.region_name ?? post.region_code} · 수량{" "}
-              {post.quantity ?? "미정"}
+              {post.region_name ?? post.region_code} · 재고 {stockLabel}
+              {unitLabel ? ` · ${unitLabel}` : ""}
             </div>
             <div
               className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${statusOption.className}`}
@@ -458,51 +817,6 @@ export default function PostDetailPage() {
                   ))}
                 </select>
               </div>
-              {showSoldPicker && (
-                <div className="rounded border p-3 text-sm">
-                  <p className="mb-2 text-zinc-600">
-                    거래 완료 상대를 선택하세요.
-                  </p>
-                  {buyerRooms.length === 0 ? (
-                    <p className="text-zinc-500">
-                      구매자 채팅이 없어 선택할 수 없습니다.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {buyerRooms.map((room) => {
-                        const buyerName =
-                          (room.buyer_id && buyersById[room.buyer_id]) ||
-                          "구매자";
-                        return (
-                          <label
-                            key={room.id}
-                            className="flex items-center gap-2"
-                          >
-                            <input
-                              type="radio"
-                              name="sold-room"
-                              value={room.id}
-                              checked={selectedSoldRoomId === room.id}
-                              onChange={() => setSelectedSoldRoomId(room.id)}
-                            />
-                            <span>{buyerName}</span>
-                          </label>
-                        );
-                      })}
-                      <button
-                        type="button"
-                        className="rounded bg-zinc-900 px-3 py-2 text-white"
-                        onClick={handleConfirmSold}
-                      >
-                        거래 완료 확정
-                      </button>
-                      {soldMessage && (
-                        <p className="text-sm text-zinc-600">{soldMessage}</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
               <div className="flex gap-2">
                 <button className="rounded border px-4 py-2">편집(선택)</button>
                 <button
@@ -516,57 +830,416 @@ export default function PostDetailPage() {
           )}
 
           {!isSeller && (
-            <div className="space-y-3">
-              <button
-                onClick={handleChat}
-                className="w-full rounded bg-zinc-900 px-4 py-3 text-white cursor-pointer"
-              >
-                판매자에게 채팅하기
-              </button>
-              {post.status === "sold" && isSoldBuyer && !hasReviewed && (
-                <form onSubmit={handleReviewSubmit} className="space-y-2">
-                  <h2 className="font-medium">리뷰 작성</h2>
-                  <div className="flex items-center gap-2">
-                    <label className="text-sm text-zinc-600" htmlFor="rating">
-                      평점
-                    </label>
-                    <input
-                      id="rating"
-                      type="number"
-                      min={1}
-                      max={5}
-                      className="w-20 rounded border px-2 py-1"
-                      value={rating}
-                      onChange={(e) => setRating(Number(e.target.value))}
-                    />
-                  </div>
-                  <textarea
-                    className="w-full rounded border px-3 py-2"
-                    placeholder="리뷰 내용을 입력하세요"
-                    rows={4}
-                    value={reviewContent}
-                    onChange={(e) => setReviewContent(e.target.value)}
-                  />
+            <div className="space-y-4">
+              {post.delivery_type && (
+                <div className="rounded-2xl border p-4 text-sm text-zinc-600">
+                  배송 유형: {post.delivery_type}
+                </div>
+              )}
+              <div className="sticky bottom-0 -mx-6 border-t border-zinc-200 bg-white/95 p-4 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
+                <div className="flex w-full gap-3">
                   <button
-                    type="submit"
-                    className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer"
+                    onClick={handleChat}
+                    className="flex-[3] rounded border border-zinc-300 px-4 py-3 text-sm text-zinc-700 hover:border-zinc-900"
                   >
-                    리뷰 등록
+                    채팅하기
                   </button>
-                  {reviewMessage && (
-                    <p className="text-sm text-zinc-600">{reviewMessage}</p>
-                  )}
-                </form>
-              )}
-              {post.status === "sold" && isSoldBuyer && hasReviewed && (
-                <p className="text-sm text-zinc-600">
-                  이미 리뷰를 작성했습니다.
-                </p>
-              )}
+                  <button
+                    onClick={handleBuyClick}
+                    disabled={isStockUnavailable || post.price == null}
+                    className="flex-[7] rounded bg-lime-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-lime-500 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                  >
+                    {isSoldOut ? "품절" : "바로 구매"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       </div>
+      {isBuyOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">바로 구매</h2>
+              <button
+                type="button"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-zinc-500 hover:bg-zinc-100 hover:text-zinc-700"
+                onClick={() => setIsBuyOpen(false)}
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-4 space-y-4 text-sm">
+              <div className="space-y-2 rounded-xl bg-zinc-50 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">배송지</span>
+                  <button
+                    type="button"
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:border-zinc-900"
+                    onClick={() => {
+                      setAddressPickerError("");
+                      setAddressPickerSnapshot(selectedAddressId);
+                      setIsAddressPickerOpen(true);
+                      setIsAddingAddress(false);
+                    }}
+                  >
+                    변경
+                  </button>
+                </div>
+                {shippingName || shippingAddressLine ? (
+                  <div className="space-y-1 text-xs text-zinc-700">
+                    <div className="font-medium">
+                      {shippingName || "수령인"}
+                      {shippingLabel ? ` (${shippingLabel})` : ""}
+                    </div>
+                    {shippingPhone && (
+                      <div className="text-zinc-500">{shippingPhone}</div>
+                    )}
+                    <div>
+                      {shippingAddressLine || "주소를 선택하세요."}
+                      {shippingDetailLine ? ` ${shippingDetailLine}` : ""}
+                      {postalCode ? ` (${postalCode})` : ""}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-zinc-500">
+                    배송지를 선택하세요.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2 rounded-xl bg-zinc-50 px-3 py-2">
+                <label className="space-y-1">
+                  <span className="text-xs text-zinc-500">배송 메모</span>
+                  <select
+                    className="w-full rounded border border-zinc-300 bg-white px-3 py-2 text-sm"
+                    value={memoPreset}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setMemoPreset(next);
+                      if (next === "직접 입력") {
+                        setAddressMemo("");
+                      } else {
+                        setAddressMemo(next);
+                      }
+                    }}
+                  >
+                    <option value="문 앞에 놔주세요">문 앞에 놔주세요</option>
+                    <option value="배송 전 연락 바랍니다">
+                      배송 전 연락 바랍니다
+                    </option>
+                    <option value="직접 입력">직접 입력</option>
+                  </select>
+                </label>
+                {memoPreset === "직접 입력" && (
+                  <textarea
+                    className="w-full resize-none rounded border border-zinc-300 px-3 py-2"
+                    rows={3}
+                    placeholder="요청사항을 입력해주세요"
+                    value={addressMemo}
+                    onChange={(e) => setAddressMemo(e.target.value)}
+                  />
+                )}
+              </div>
+              <div className="rounded-xl bg-zinc-50 px-3 py-2">
+                <div className="flex items-center gap-3">
+                  {primaryImage ? (
+                    <img
+                      src={primaryImage}
+                      alt={post.title}
+                      className="h-14 w-14 rounded-lg object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-14 w-14 items-center justify-center rounded-lg bg-zinc-200 text-[10px] text-zinc-500">
+                      No Image
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <div className="text-[11px] text-zinc-500">구매 상품</div>
+                    <div className="text-sm font-medium text-zinc-900">
+                      {post.title}
+                      {unitLabel ? ` · ${unitLabel}` : ""}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2 rounded-xl bg-zinc-50 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">
+                    수량 (최대 {maxBuyQuantity}개)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      className="h-8 w-8 rounded border border-zinc-300 text-base text-zinc-700 disabled:opacity-40"
+                      onClick={() =>
+                        setBuyQuantity((prev) => {
+                          const current = Number(prev || 1);
+                          return String(Math.max(1, current - 1));
+                        })
+                      }
+                      disabled={Number(buyQuantity || 1) <= 1}
+                    >
+                      -
+                    </button>
+                    <span className="min-w-[32px] text-center text-base font-semibold">
+                      {Math.min(
+                        maxBuyQuantity,
+                        Math.max(1, Number(buyQuantity || 1))
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="h-8 w-8 rounded border border-zinc-300 text-base text-zinc-700 disabled:opacity-40"
+                      onClick={() =>
+                        setBuyQuantity((prev) => {
+                          const current = Number(prev || 1);
+                          return String(Math.min(maxBuyQuantity, current + 1));
+                        })
+                      }
+                      disabled={Number(buyQuantity || 1) >= maxBuyQuantity}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-end justify-between">
+                <span className="text-xs text-zinc-500">총 결제 금액</span>
+                <span className="text-lg font-bold text-lime-700">
+                  {post.price
+                    ? (Number(buyQuantity || 0) * post.price).toLocaleString(
+                        "ko-KR"
+                      )
+                    : 0}
+                  원
+                </span>
+              </div>
+              {buyError && <p className="text-sm text-red-600">{buyError}</p>}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                className="rounded bg-zinc-100 px-4 py-2 text-sm text-zinc-700"
+                onClick={() => setIsBuyOpen(false)}
+                disabled={buyLoading}
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                className="rounded bg-lime-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-lime-500 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                onClick={handlePurchase}
+                disabled={buyLoading}
+              >
+                {buyLoading ? "처리 중..." : "결제 완료"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {isAddressPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">배송지 선택</h2>
+              <button
+                type="button"
+                className="text-sm text-zinc-500 hover:text-zinc-700"
+                onClick={() => {
+                  const shouldRestore =
+                    isAddingAddress || selectedAddressId === "manual";
+                  setIsAddressPickerOpen(false);
+                  setIsAddingAddress(false);
+                  if (shouldRestore) {
+                    setSelectedAddressId(addressPickerSnapshot);
+                    setUseManualAddress(addressPickerSnapshot === "manual");
+                  }
+                }}
+              >
+                닫기
+              </button>
+            </div>
+            <div className="mt-4 space-y-3 text-sm">
+              {shippingAddresses.length === 0 ? (
+                <p className="text-sm text-zinc-500">
+                  저장된 배송지가 없습니다.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {shippingAddresses.map((addr) => (
+                    <button
+                      key={addr.id}
+                      type="button"
+                      className="w-full rounded-xl border border-zinc-200 px-3 py-2 text-left hover:border-zinc-400"
+                      onClick={() => {
+                        setSelectedAddressId(addr.id);
+                        setUseManualAddress(false);
+                        setIsAddingAddress(false);
+                        setIsAddressPickerOpen(false);
+                      }}
+                    >
+                      <div className="text-sm font-medium">
+                        {addr.label ?? "배송지"}
+                        {addr.is_default && (
+                          <span className="ml-2 rounded-full border border-lime-200 bg-lime-50 px-2 py-0.5 text-[10px] text-lime-700">
+                            기본
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-600">
+                        {addr.receiver_name} · {addr.receiver_phone}
+                      </div>
+                      <div className="mt-1 text-xs text-zinc-500">
+                        {addr.road_address}
+                        {addr.address_detail ? ` ${addr.address_detail}` : ""}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              <button
+                type="button"
+                className="w-full rounded border border-zinc-300 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50"
+                onClick={() => setIsAddingAddress((prev) => !prev)}
+              >
+                {isAddingAddress ? "직접 추가 닫기" : "직접 추가"}
+              </button>
+              {isAddingAddress && (
+                <div className="space-y-3 rounded-xl border border-zinc-200 p-3">
+                  <label className="space-y-1">
+                    <span className="text-zinc-600">수령인 이름</span>
+                    <input
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      value={recipientName}
+                      onChange={(e) => setRecipientName(e.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-zinc-600">연락처</span>
+                    <div className="flex gap-2">
+                      <select
+                        className="rounded border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200"
+                        value={recipientCountry}
+                        onChange={(e) => setRecipientCountry(e.target.value)}
+                      >
+                        {[
+                          { code: "+82", label: "대한민국", flag: "🇰🇷" },
+                          { code: "+1", label: "미국", flag: "🇺🇸" },
+                          { code: "+7", label: "카자흐스탄", flag: "🇰🇿" },
+                          { code: "+81", label: "일본", flag: "🇯🇵" },
+                          { code: "+86", label: "중국", flag: "🇨🇳" },
+                          { code: "+998", label: "우즈베키스탄", flag: "🇺🇿" },
+                        ].map((item) => (
+                          <option key={item.code} value={item.code}>
+                            {item.flag} {item.label} {item.code}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        value={recipientPhone}
+                        onChange={(e) =>
+                          setRecipientPhone(formatPhone(e.target.value))
+                        }
+                      />
+                    </div>
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-zinc-600">배송지명</span>
+                    <input
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      placeholder="예: 집, 회사"
+                      value={addressLabel}
+                      onChange={(e) => setAddressLabel(e.target.value)}
+                    />
+                  </label>
+                  <div className="space-y-1">
+                    <span className="text-zinc-600">주소 검색</span>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <input
+                        className="w-full rounded border border-zinc-300 px-3 py-2"
+                        placeholder="주소를 검색하세요"
+                        value={buyAddressQuery}
+                        onChange={(e) => setBuyAddressQuery(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-700 shadow-sm hover:bg-zinc-50"
+                        onClick={handleBuyAddressSearch}
+                      >
+                        {buyAddressLoading ? "검색 중..." : "주소 검색"}
+                      </button>
+                    </div>
+                    {buyAddressResults.length > 0 && (
+                      <div className="max-h-40 overflow-auto rounded border border-zinc-300 bg-white text-xs shadow-sm">
+                        {buyAddressResults.map((result, index) => (
+                          <button
+                            key={`${result.place_id}-${index}`}
+                            type="button"
+                            className="block w-full border-b border-zinc-200 px-3 py-2 text-left hover:bg-zinc-50"
+                            onClick={() => handleSelectBuyAddress(result)}
+                          >
+                            {result.display_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {buyAddressHelp && (
+                      <p className="text-xs text-zinc-500">{buyAddressHelp}</p>
+                    )}
+                  </div>
+                  <label className="space-y-1">
+                    <span className="text-zinc-600">도로명 주소</span>
+                    <input
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      value={roadAddress}
+                      onChange={(e) => setRoadAddress(e.target.value)}
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-zinc-600">상세 주소</span>
+                    <input
+                      className="w-full rounded border border-zinc-300 px-3 py-2"
+                      value={addressDetail}
+                      onChange={(e) => setAddressDetail(e.target.value)}
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-zinc-600">
+                    <input
+                      type="checkbox"
+                      checked={saveAddress}
+                      onChange={(e) => setSaveAddress(e.target.checked)}
+                    />
+                    이 배송지 저장
+                  </label>
+                  {saveAddress && (
+                    <label className="flex items-center gap-2 text-xs text-zinc-600">
+                      <input
+                        type="checkbox"
+                        checked={saveAsDefault}
+                        onChange={(e) => setSaveAsDefault(e.target.checked)}
+                      />
+                      기본 배송지로 설정
+                    </label>
+                  )}
+                  {addressPickerError && (
+                    <p className="text-xs text-red-600">{addressPickerError}</p>
+                  )}
+                  <button
+                    type="button"
+                    className="w-full rounded bg-lime-600 px-3 py-2 text-sm font-semibold text-white"
+                    onClick={handleApplyManualAddress}
+                  >
+                    적용하기
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
