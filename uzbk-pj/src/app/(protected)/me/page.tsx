@@ -562,6 +562,15 @@ export default function MePage() {
     router.replace("/auth");
   };
 
+  const inputBase =
+    "w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+  const inputSm =
+    "rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200";
+  const buttonPrimary =
+    "rounded bg-zinc-900 px-4 py-2 text-white shadow-sm hover:bg-zinc-800 cursor-pointer";
+  const buttonOutline =
+    "whitespace-nowrap rounded border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-800 shadow-sm hover:bg-zinc-50";
+
   if (loading) return <Loading />;
 
   return (
@@ -571,13 +580,13 @@ export default function MePage() {
       <section className="space-y-2 border-b pb-6">
         <h2 className="font-medium">닉네임 변경</h2>
         <input
-          className="w-full max-w-sm rounded border px-3 py-2"
+          className={`${inputBase} max-w-sm`}
           placeholder="닉네임"
           value={nickname}
           onChange={(e) => setNickname(e.target.value)}
         />
         <button
-          className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer"
+          className={buttonPrimary}
           onClick={handleNicknameSave}
         >
           닉네임 저장
@@ -599,26 +608,26 @@ export default function MePage() {
         <h2 className="font-medium">동네 변경</h2>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input
-            className="w-full max-w-sm rounded border px-3 py-2"
+            className={`${inputBase} max-w-sm`}
             placeholder="도로명 주소를 검색하세요"
             value={profileAddressQuery}
             onChange={(e) => setProfileAddressQuery(e.target.value)}
           />
           <button
             type="button"
-            className="whitespace-nowrap rounded border px-3 py-2 text-sm"
+            className={buttonOutline}
             onClick={handleProfileAddressSearch}
           >
             {profileAddressLoading ? "검색 중..." : "주소 검색"}
           </button>
         </div>
         {profileAddressResults.length > 0 && (
-          <div className="max-h-40 overflow-auto rounded border text-xs">
+          <div className="max-h-40 overflow-auto rounded border border-zinc-300 bg-white text-xs shadow-sm">
             {profileAddressResults.map((result, index) => (
               <button
                 key={`${result.place_id}-${index}`}
                 type="button"
-                className="block w-full border-b px-3 py-2 text-left hover:bg-zinc-50"
+                className="block w-full border-b border-zinc-200 px-3 py-2 text-left hover:bg-zinc-50"
                 onClick={() => handleSelectProfileAddress(result)}
               >
                 {result.display_name}
@@ -630,27 +639,27 @@ export default function MePage() {
           <p className="text-xs text-zinc-500">{profileAddressHelp}</p>
         )}
         <input
-          className="w-full max-w-sm rounded border px-3 py-2"
+          className={`${inputBase} max-w-sm`}
           placeholder="선택된 도로명 주소"
           value={profileRoadAddress}
           readOnly
         />
         <div className="grid w-full max-w-sm gap-2 sm:grid-cols-2">
           <input
-            className="rounded border px-3 py-2"
+            className={inputSm}
             placeholder="우편번호"
             value={profilePostalCode}
             readOnly
           />
           <input
-            className="rounded border px-3 py-2"
+            className={inputSm}
             placeholder="상세 주소"
             value={profileAddressDetail}
             onChange={(e) => setProfileAddressDetail(e.target.value)}
           />
         </div>
         <button
-          className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer"
+          className={buttonPrimary}
           onClick={handleProfileAddressSave}
         >
           동네 저장
@@ -686,7 +695,7 @@ export default function MePage() {
               농장 이름 <span className="text-red-500">*</span>
             </span>
             <input
-              className="w-full rounded border px-3 py-2"
+              className={inputBase}
               placeholder="예: Uzbeki Farm"
               value={farmName}
               onChange={(e) => setFarmName(e.target.value)}
@@ -698,7 +707,7 @@ export default function MePage() {
               농장주 성명 <span className="text-red-500">*</span>
             </span>
             <input
-              className="w-full rounded border px-3 py-2"
+              className={inputBase}
               placeholder="예: 홍길동"
               value={ownerName}
               onChange={(e) => setOwnerName(e.target.value)}
@@ -710,7 +719,7 @@ export default function MePage() {
               연락처 <span className="text-red-500">*</span>
             </span>
             <input
-              className="w-full rounded border px-3 py-2"
+              className={inputBase}
               placeholder="예: 010-1234-5678"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -723,14 +732,14 @@ export default function MePage() {
             </span>
             <div className="flex flex-col gap-2 sm:flex-row">
               <input
-                className="w-full rounded border px-3 py-2"
+                className={inputBase}
                 placeholder="도로명 주소를 검색하세요"
                 value={addressQuery}
                 onChange={(e) => setAddressQuery(e.target.value)}
                 disabled={verification?.status === "approved" && !isEditingApproved}
               />
               <button
-                className="whitespace-nowrap rounded border px-4 py-2 text-xs text-zinc-700"
+                className="whitespace-nowrap rounded border border-zinc-300 bg-white px-4 py-2 text-xs text-zinc-800 shadow-sm hover:bg-zinc-50"
                 type="button"
                 onClick={handleAddressSearch}
                 disabled={
@@ -742,12 +751,12 @@ export default function MePage() {
               </button>
             </div>
             {addressResults.length > 0 && (
-              <div className="max-h-40 overflow-auto rounded border">
+              <div className="max-h-40 overflow-auto rounded border border-zinc-300 bg-white shadow-sm">
                 {addressResults.map((result, index) => (
                   <button
                     key={`${result.place_id}-${index}`}
                     type="button"
-                    className="block w-full border-b px-3 py-2 text-left text-xs hover:bg-zinc-50"
+                    className="block w-full border-b border-zinc-200 px-3 py-2 text-left text-xs hover:bg-zinc-50"
                     onClick={() => handleSelectAddress(result)}
                   >
                     {result.display_name}
@@ -759,7 +768,7 @@ export default function MePage() {
               <p className="text-xs text-zinc-500">{addressHelp}</p>
             )}
             <input
-              className="w-full rounded border px-3 py-2"
+              className={inputBase}
               placeholder="선택된 도로명 주소"
               value={roadAddress}
               readOnly
@@ -770,7 +779,7 @@ export default function MePage() {
           <label className="space-y-1 text-sm">
             <span className="font-medium">우편번호</span>
             <input
-              className="w-full rounded border px-3 py-2"
+              className={inputBase}
               placeholder="우편번호"
               value={postalCode}
               readOnly
@@ -779,7 +788,7 @@ export default function MePage() {
           <label className="space-y-1 text-sm">
             <span className="font-medium">상세 주소</span>
             <input
-              className="w-full rounded border px-3 py-2"
+              className={inputBase}
               placeholder="상세 주소"
               value={addressDetail}
               onChange={(e) => setAddressDetail(e.target.value)}
@@ -790,7 +799,7 @@ export default function MePage() {
         <label className="space-y-1 text-sm">
           <span className="font-medium">농장 위치 부가 설명</span>
           <input
-            className="w-full rounded border px-3 py-2"
+            className={inputBase}
             placeholder="예: 마을회관에서 200m"
             value={locationNote}
             onChange={(e) => setLocationNote(e.target.value)}
@@ -800,7 +809,7 @@ export default function MePage() {
         <label className="space-y-1 text-sm">
           <span className="font-medium">농장 추가 설명</span>
           <textarea
-            className="w-full rounded border px-3 py-2"
+            className={inputBase}
             placeholder="예: 유기농 인증, 방문 수령 가능"
             value={farmDescription}
             onChange={(e) => setFarmDescription(e.target.value)}
@@ -830,7 +839,7 @@ export default function MePage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button
-            className="rounded bg-zinc-900 px-4 py-2 text-white cursor-pointer disabled:opacity-60"
+            className={`${buttonPrimary} disabled:opacity-60`}
             onClick={handleVerificationSubmit}
             disabled={
               verificationLoading ||
@@ -845,7 +854,7 @@ export default function MePage() {
           </button>
           {verification?.status === "approved" && !isEditingApproved && (
             <button
-              className="rounded border px-4 py-2 text-sm text-zinc-700 cursor-pointer"
+              className="rounded border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-800 shadow-sm hover:bg-zinc-50 cursor-pointer"
               onClick={() => {
                 setIsEditingApproved(true);
                 setVerificationMsg("정보 수정을 진행하세요.");

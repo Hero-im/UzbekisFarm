@@ -444,7 +444,7 @@ export default function FeedPage() {
 
         <div className="flex flex-wrap items-center gap-3">
           <input
-            className="w-full max-w-md rounded-full border px-4 py-2 text-sm"
+            className="w-full max-w-md rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200"
             placeholder="검색어를 입력하세요 (작물, 제목)"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -464,10 +464,10 @@ export default function FeedPage() {
             <button
               key={c}
               onClick={() => setCategory(c)}
-              className={`rounded-full border px-4 py-2 text-sm ${
+              className={`rounded-full border border-zinc-300 px-4 py-2 text-sm shadow-sm ${
                 category === c
                   ? "bg-zinc-900 text-white"
-                  : "text-zinc-700"
+                  : "bg-white text-zinc-800 hover:bg-zinc-50"
               }`}
             >
               {c}
@@ -486,7 +486,7 @@ export default function FeedPage() {
                   <button
                     type="button"
                     onClick={handleLocalToggle}
-                    className="rounded-full border border-zinc-200 px-2.5 py-1 text-sm font-semibold text-zinc-700 hover:border-zinc-900"
+                    className="rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-sm font-semibold text-zinc-800 shadow-sm hover:border-zinc-900"
                     aria-label="동네 농장 상품 더보기"
                   >
                     {isLocalExpanded ? "-" : "+"}
@@ -509,7 +509,7 @@ export default function FeedPage() {
                       if (localOffset === 0) return;
                       setLocalOffset((prev) => Math.max(prev - localLimit, 0));
                     }}
-                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full border border-zinc-300 bg-white/95 px-3 py-2 text-zinc-700 shadow-md transition hover:border-zinc-900"
                     aria-label="이전"
                   >
                     <svg
@@ -534,7 +534,7 @@ export default function FeedPage() {
                         Math.min(prev + localLimit, localMaxOffset)
                       );
                     }}
-                    className="pointer-events-auto absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    className="pointer-events-auto absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full border border-zinc-300 bg-white/95 px-3 py-2 text-zinc-700 shadow-md transition hover:border-zinc-900"
                     aria-label="다음"
                   >
                     <svg
@@ -669,7 +669,7 @@ export default function FeedPage() {
                   <button
                     type="button"
                     onClick={handleAllToggle}
-                    className="rounded-full border border-zinc-200 px-2.5 py-1 text-sm font-semibold text-zinc-700 hover:border-zinc-900"
+                    className="rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-sm font-semibold text-zinc-800 shadow-sm hover:border-zinc-900"
                     aria-label="전체 농장 상품 더보기"
                   >
                     {isAllExpanded ? "-" : "+"}
@@ -688,7 +688,7 @@ export default function FeedPage() {
                       if (allOffset === 0) return;
                       setAllOffset((prev) => Math.max(prev - allLimit, 0));
                     }}
-                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    className="pointer-events-auto absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full border border-zinc-300 bg-white/95 px-3 py-2 text-zinc-700 shadow-md transition hover:border-zinc-900"
                     aria-label="이전"
                   >
                     <svg
@@ -713,7 +713,7 @@ export default function FeedPage() {
                         Math.min(prev + allLimit, allMaxOffset)
                       );
                     }}
-                    className="pointer-events-auto absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full border bg-white/80 px-3 py-2 text-zinc-600 opacity-60 shadow-sm backdrop-blur transition hover:opacity-100 hover:border-zinc-900"
+                    className="pointer-events-auto absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full border border-zinc-300 bg-white/95 px-3 py-2 text-zinc-700 shadow-md transition hover:border-zinc-900"
                     aria-label="다음"
                   >
                     <svg
@@ -808,7 +808,7 @@ export default function FeedPage() {
                       {farmName ? (
                         <button
                           type="button"
-                          className="inline-flex items-center rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-semibold text-zinc-900 hover:border-zinc-900"
+                          className="inline-flex items-center rounded-full border border-zinc-300 bg-white px-2.5 py-1 text-xs font-semibold text-zinc-900 shadow-sm hover:border-zinc-900"
                           onClick={() => router.push(`/farms/${post.user_id}`)}
                         >
                           {farmName}

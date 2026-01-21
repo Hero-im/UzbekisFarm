@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 
@@ -10,6 +11,8 @@ export default function Nav() {
   const [unreadTotal, setUnreadTotal] = useState(0);
   const [roomIds, setRoomIds] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const pathname = usePathname();
+  const isLanding = pathname === "/" && !session;
 
   useEffect(() => {
     let cancelled = false;
@@ -208,9 +211,19 @@ export default function Nav() {
     };
   }, [roomIds, session, loadUnread]);
 
+  if (isLanding) {
+    return null;
+  }
+
   return (
-    <header className="border-b border-zinc-200 bg-white">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-4">
+    <header
+      className={
+        isLanding
+          ? "absolute left-0 top-0 z-30 w-full bg-transparent"
+          : "border-b border-zinc-200 bg-white"
+      }
+    >
+      <div className="mx-auto flex w-full max-w-none items-center justify-between px-6 py-4 sm:px-10 xl:px-16">
         <Link href="/" className="text-lg font-semibold">
           Farm Store
         </Link>
@@ -252,7 +265,11 @@ export default function Nav() {
         ) : (
           <Link
             href="/auth"
-            className="rounded-md bg-zinc-900 px-3 py-2 text-sm text-white cursor-pointer"
+            className={`rounded-md px-3 py-2 text-sm cursor-pointer ${
+              isLanding
+                ? "border border-[#234d32]/30 bg-white/70 text-[#234d32]"
+                : "bg-zinc-900 text-white"
+            }`}
           >
             로그인
           </Link>
