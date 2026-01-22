@@ -682,7 +682,7 @@ export default function MePage() {
       .from("seller_verifications")
       .upsert(payload, { onConflict: "user_id" })
       .select(
-        "user_id,farm_name,owner_name,phone,address,location_note,description,business_license_path,status,requested_at,reviewed_at,rejection_reason"
+        "user_id,farm_name,owner_name,phone,address,postal_code,address_detail,location_note,description,business_license_path,status,requested_at,reviewed_at,rejection_reason"
       )
       .single();
 
