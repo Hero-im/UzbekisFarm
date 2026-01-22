@@ -174,6 +174,8 @@ export default function FeedPage() {
           lat: Number(row.latitude),
           lng: Number(row.longitude),
           detailUrl: `/farms/${row.user_id}`,
+          ratingAvg: null as number | null,
+          ratingCount: 0,
         }))
         .filter((farm) => !Number.isNaN(farm.lat) && !Number.isNaN(farm.lng));
 
