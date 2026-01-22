@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
 import { Playfair_Display, Space_Grotesk } from "next/font/google";
 import FeedPage from "./(protected)/feed/page";
 import { useAuth } from "@/lib/auth-context";
@@ -19,7 +18,6 @@ const uiFont = Space_Grotesk({
 
 export default function Page() {
   const { session, isLoading } = useAuth();
-  const [logoError, setLogoError] = useState(false);
 
   if (isLoading) return <Loading />;
   if (session) return <FeedPage />;
@@ -50,20 +48,31 @@ export default function Page() {
           <div className="grid gap-10 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-6">
               <div className="flex items-center gap-4">
-                {!logoError ? (
-                  <img
-                    src="/farm-store-logo.png"
-                    alt="Farm Store"
-                    className="h-16 w-auto"
-                    onError={() => setLogoError(true)}
-                  />
-                ) : (
-                  <div className="rounded-full border border-[#234d32]/30 bg-white/70 px-4 py-2 text-sm font-semibold text-[#234d32]">
-                    FARM STORE
+                <div className="flex items-center gap-3">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1f4d2e] text-white shadow-[0_12px_28px_rgba(31,77,46,0.28)]">
+                    <svg
+                      width="22"
+                      height="22"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M7 14c3-6 7-8 10-8 0 6-4 11-10 11" />
+                      <path d="M7 14c0 3 2 4 5 4" />
+                    </svg>
+                  </span>
+                  <div>
+                    <div className="text-sm font-semibold tracking-tight text-[#1f4d2e]">
+                      Farm Store
+                    </div>
+                    <div className="text-[11px] uppercase tracking-[0.35em] text-[#5a7c4c]">
+                      local & fresh
+                    </div>
                   </div>
-                )}
-                <div className="text-xs uppercase tracking-[0.35em] text-[#5a7c4c]">
-                  local & fresh
                 </div>
               </div>
 

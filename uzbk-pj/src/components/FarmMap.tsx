@@ -76,11 +76,13 @@ export default function FarmMap({
   farms,
   zoom = 13,
   radiusKm,
+  popupMode = "full",
 }: {
   center: LatLng | null;
   farms: FarmMarker[];
   zoom?: number;
   radiusKm?: number;
+  popupMode?: "full" | "location";
 }) {
   const mapRef = useRef<any>(null);
   const markersRef = useRef<any>(null);
@@ -169,13 +171,18 @@ export default function FarmMap({
       const linkHtml = farm.detailUrl
         ? `<div style="margin-top:6px;"><a href="${farm.detailUrl}" style="color:#2563eb;text-decoration:underline;">농장 상품 보기</a></div>`
         : "";
-      const popupText = safeAddress
-        ? `${safeName}<br/>${safeAddress}${ratingHtml}${linkHtml}`
-        : `${safeName}${ratingHtml}${linkHtml}`;
+      const popupText =
+        popupMode === "location"
+          ? safeAddress
+            ? `${safeName}<br/>${safeAddress}`
+            : safeName
+          : safeAddress
+          ? `${safeName}<br/>${safeAddress}${ratingHtml}${linkHtml}`
+          : `${safeName}${ratingHtml}${linkHtml}`;
       marker.bindPopup(popupText);
       markerLayer.addLayer(marker);
     });
-  }, [center, farms, zoom, radiusKm, mapReady]);
+  }, [center, farms, zoom, radiusKm, mapReady, popupMode]);
 
   return (
     <div className="h-full w-full overflow-hidden rounded-xl" ref={containerRef} />

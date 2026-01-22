@@ -134,6 +134,7 @@ export default function NewPostPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setMessage("");
     if (!session) {
       setMessage("로그인이 필요합니다.");
       return;
@@ -166,26 +167,52 @@ export default function NewPostPage() {
     setUploading(true);
     setUploadedCount(0);
 
-    const { data: post, error: postError } = await supabase
+    const basePayload = {
+      user_id: session.user.id,
+      title,
+      description,
+      content: description,
+      region_code: regionCode,
+      region_name: regionName,
+      price: price ? Number(price.replace(/,/g, "")) : null,
+      stock_quantity: quantity ? Number(quantity) : null,
+      unit_size: unitSize ? Number(unitSize) : null,
+      unit,
+      delivery_type: deliveryType,
+      status: "ON_SALE",
+      category,
+    };
+    const payloadWithHarvest = {
+      ...basePayload,
+      harvest_date: harvestDate || null,
+    };
+
+    let post: { id: string } | null = null;
+    let postError: { message: string } | null = null;
+    const primary = await supabase
       .from("posts")
-      .insert({
-        user_id: session.user.id,
-        title,
-        description,
-        content: description,
-        region_code: regionCode,
-        region_name: regionName,
-        price: price ? Number(price.replace(/,/g, "")) : null,
-        stock_quantity: quantity ? Number(quantity) : null,
-        unit_size: unitSize ? Number(unitSize) : null,
-        unit,
-        delivery_type: deliveryType,
-        harvest_date: harvestDate || null,
-        status: "ON_SALE",
-        category,
-      })
+      .insert(payloadWithHarvest)
       .select("id")
       .single();
+
+    if (primary.error) {
+      const message = primary.error.message ?? "";
+      if (message.includes("harvest_date")) {
+        const fallback = await supabase
+          .from("posts")
+          .insert(basePayload)
+          .select("id")
+          .single();
+        post = (fallback.data as { id: string }) ?? null;
+        postError = fallback.error
+          ? { message: fallback.error.message }
+          : null;
+      } else {
+        postError = { message: message || "게시글 등록 실패" };
+      }
+    } else {
+      post = (primary.data as { id: string }) ?? null;
+    }
 
     if (postError || !post) {
       setMessage(postError?.message ?? "게시글 등록 실패");
@@ -460,6 +487,7 @@ export default function NewPostPage() {
 
         <div className="flex justify-end">
           <button
+            type="submit"
             className="w-full rounded bg-lime-600 px-5 py-3 text-white shadow-sm hover:bg-lime-500 sm:w-auto"
             disabled={uploading}
           >

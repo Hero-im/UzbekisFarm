@@ -22,6 +22,7 @@ type Room = {
 
 type PostSummary = {
   id: string;
+  user_id: string | null;
   title: string | null;
   price: number | null;
   category: string | null;
@@ -43,6 +44,11 @@ type ShippingAddress = {
 };
 
 const MAX_MESSAGE_LENGTH = 500;
+const STATUS_OPTIONS = [
+  { value: "ON_SALE", label: "판매중" },
+  { value: "RESERVED", label: "예약중" },
+  { value: "COMPLETED", label: "판매종료" },
+];
 
 export default function ChatRoomPage() {
   const params = useParams();
@@ -61,6 +67,7 @@ export default function ChatRoomPage() {
   const [otherNickname, setOtherNickname] = useState<string | null>(null);
   const [postId, setPostId] = useState<string | null>(null);
   const [postSummary, setPostSummary] = useState<PostSummary | null>(null);
+  const [postStatus, setPostStatus] = useState<string | null>(null);
   const [farmName, setFarmName] = useState<string | null>(null);
   const [shippingAddresses, setShippingAddresses] = useState<
     ShippingAddress[]
@@ -192,7 +199,9 @@ export default function ChatRoomPage() {
       if (roomData.post_id) {
         const { data: postData } = await supabase
           .from("posts")
-          .select("id,title,price,category,unit_size,unit,stock_quantity")
+          .select(
+            "id,user_id,title,price,category,unit_size,unit,stock_quantity,status"
+          )
           .eq("id", roomData.post_id)
           .maybeSingle();
 
@@ -215,6 +224,7 @@ export default function ChatRoomPage() {
         if (!cancelled && postData) {
           setPostSummary({
             id: postData.id,
+            user_id: postData.user_id ?? null,
             title: postData.title ?? null,
             price: postData.price ?? null,
             category: postData.category ?? null,
@@ -223,6 +233,7 @@ export default function ChatRoomPage() {
             stock_quantity: postData.stock_quantity ?? null,
             thumbnail,
           });
+          setPostStatus(postData.status ?? "ON_SALE");
         }
       }
 
@@ -495,6 +506,10 @@ export default function ChatRoomPage() {
   };
 
   const handleBuyClick = () => {
+    if (isSeller) {
+      setBuyError("판매자는 구매할 수 없습니다.");
+      return;
+    }
     if (!session || !postSummary) return;
     setBuyQuantity("1");
     setBuyError("");
@@ -741,7 +756,20 @@ export default function ChatRoomPage() {
       minute: "2-digit",
     });
 
-  const isSeller = room?.seller_id === session?.user.id;
+  const isSeller =
+    room?.seller_id === session?.user.id ||
+    postSummary?.user_id === session?.user.id;
+
+  const handleStatusChange = async (nextStatus: string) => {
+    if (!postSummary || !session) return;
+    const { error } = await supabase
+      .from("posts")
+      .update({ status: nextStatus })
+      .eq("id", postSummary.id);
+    if (!error) {
+      setPostStatus(nextStatus);
+    }
+  };
   const postPriceLabel =
     postSummary?.price != null
       ? `${postSummary.price.toLocaleString("ko-KR")}원`
@@ -832,16 +860,41 @@ export default function ChatRoomPage() {
             >
               {farmName ? `${farmName} 농장` : "농장 정보"}
             </button>
-            <button
-              type="button"
-              className="flex-1 rounded bg-lime-600 px-5 py-2 text-sm font-semibold text-white hover:bg-lime-500"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleBuyClick();
-              }}
-            >
-              바로 구매
-            </button>
+            {isSeller ? (
+              <div
+                className="flex items-center gap-2 text-xs text-zinc-500"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <span className="rounded-full border border-zinc-200 px-3 py-1">
+                  상태 변경
+                </span>
+                <select
+                  className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-700"
+                  value={postStatus ?? "ON_SALE"}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    handleStatusChange(e.target.value);
+                  }}
+                >
+                  {STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="flex-1 rounded bg-lime-600 px-5 py-2 text-sm font-semibold text-white hover:bg-lime-500"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleBuyClick();
+                }}
+              >
+                바로 구매
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -993,7 +1046,7 @@ export default function ChatRoomPage() {
         </button>
       </div>
       {sendError && <p className="text-sm text-red-500">{sendError}</p>}
-      {isBuyOpen && postSummary && (
+      {!isSeller && isBuyOpen && postSummary && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between">

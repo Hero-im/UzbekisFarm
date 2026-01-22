@@ -1,8 +1,8 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 import Loading from "@/components/Loading";
@@ -45,6 +45,7 @@ const formatHarvestLabel = (value: string | null) => {
 export default function FeedPage() {
   const router = useRouter();
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
   const [allPosts, setAllPosts] = useState<Post[]>([]);
   const [localPosts, setLocalPosts] = useState<Post[]>([]);
@@ -81,11 +82,18 @@ export default function FeedPage() {
   const [isAllExpanded, setIsAllExpanded] = useState(false);
   const [localOffset, setLocalOffset] = useState(0);
   const [allOffset, setAllOffset] = useState(0);
+  const [cardHeight, setCardHeight] = useState(0);
+  const cardMeasureRef = useRef<HTMLDivElement | null>(null);
 
   const mapCenter = useMemo(
     () => currentLocation ?? profileLocation ?? DEFAULT_CENTER,
     [currentLocation, profileLocation]
   );
+
+
+  useEffect(() => {
+    setSearchTerm(searchParams.get("q") ?? "");
+  }, [searchParams]);
 
   const scope = useMemo<"both" | "local" | "all">(() => {
     if (pathname?.includes("/feed/local")) return "local";
@@ -428,9 +436,6 @@ export default function FeedPage() {
     };
   }, [category, showSold, searchTerm, profileLocation]);
 
-  if (!session) return <p>로그인이 필요합니다.</p>;
-  if (loading) return <Loading />;
-
   const localLimit = scope === "both"
     ? (isLocalExpanded ? SECTION_EXPANDED : SECTION_LIMIT)
     : localPosts.length;
@@ -440,6 +445,32 @@ export default function FeedPage() {
 
   const visibleLocalPosts = localPosts.slice(localOffset, localOffset + localLimit);
   const visibleAllPosts = allPosts.slice(allOffset, allOffset + allLimit);
+
+  useEffect(() => {
+    const node = cardMeasureRef.current;
+    if (!node) return;
+
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      if (rect.height > 0) {
+        setCardHeight(rect.height);
+      }
+    };
+
+    update();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", update);
+      return () => window.removeEventListener("resize", update);
+    }
+
+    const observer = new ResizeObserver(() => update());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visibleLocalPosts, visibleAllPosts, scope, isLocalExpanded, isAllExpanded]);
+
+  if (!session) return <p>로그인이 필요합니다.</p>;
+  if (loading) return <Loading />;
 
   const localTotalPages = Math.max(
     1,
@@ -489,12 +520,6 @@ export default function FeedPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <input
-            className="w-full max-w-md rounded-full border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200"
-            placeholder="검색어를 입력하세요 (작물, 제목)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
           <label className="flex items-center gap-2 text-sm text-zinc-600">
             <input
               type="checkbox"
@@ -544,7 +569,10 @@ export default function FeedPage() {
                   동네 주소를 등록하면 주변 농장 상품이 표시됩니다.
                 </div>
               ) : localPosts.length === 0 ? (
-                <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                <div
+                  className="rounded-2xl border px-6 text-center text-sm text-zinc-600 flex items-center justify-center"
+                  style={{ minHeight: cardHeight ? `${cardHeight}px` : "320px" }}
+                >
                   동네 근처에 게시글이 없어요
                 </div>
               ) : (
@@ -645,10 +673,13 @@ export default function FeedPage() {
                         post.stock_quantity !== null;
 
                       return (
-                        <div
-                          key={post.id}
-                          className="group rounded-2xl border bg-white p-3 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
-                        >
+                      <div
+                        key={post.id}
+                        ref={
+                          cardMeasureRef.current ? undefined : cardMeasureRef
+                        }
+                        className="group rounded-2xl border bg-white p-3 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
+                      >
                           <Link href={`/posts/${post.id}`} className="block">
                             <div className="relative aspect-square w-full overflow-hidden rounded-xl bg-zinc-100">
                               {thumb ? (
@@ -755,7 +786,10 @@ export default function FeedPage() {
                 )}
               </div>
               {allPosts.length === 0 ? (
-                <div className="rounded-2xl border p-6 text-sm text-zinc-600">
+                <div
+                  className="rounded-2xl border px-6 text-center text-sm text-zinc-600 flex items-center justify-center"
+                  style={{ minHeight: cardHeight ? `${cardHeight}px` : "320px" }}
+                >
                   등록된 게시글이 없어요
                 </div>
               ) : (
@@ -859,6 +893,9 @@ export default function FeedPage() {
                       return (
                         <div
                           key={post.id}
+                          ref={
+                            cardMeasureRef.current ? undefined : cardMeasureRef
+                          }
                           className="group rounded-2xl border bg-white p-3 transition hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm"
                         >
                           <Link href={`/posts/${post.id}`} className="block">

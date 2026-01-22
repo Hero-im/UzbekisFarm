@@ -22,7 +22,6 @@ const SHIP_LABEL_PRESETS = ["집", "회사", "학교", "친구", "가족", "직�
 export default function MePage() {
   const router = useRouter();
   const { session } = useAuth();
-  const [posts, setPosts] = useState<any[]>([]);
   const [receivedReviews, setReceivedReviews] = useState<any[]>([]);
   const [givenReviews, setGivenReviews] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,12 +107,6 @@ export default function MePage() {
         .eq("id", session.user.id)
         .single();
 
-      const { data: postData } = await supabase
-        .from("posts")
-        .select("id,title,created_at")
-        .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false });
-
       const { data: reviewData } = await supabase
         .from("reviews")
         .select("id,rating,content,created_at")
@@ -146,7 +139,6 @@ export default function MePage() {
           lng: Number(profile.longitude),
         });
       }
-      setPosts(postData ?? []);
       setReceivedReviews(reviewData ?? []);
       setGivenReviews(givenReviewData ?? []);
       setVerification(verificationData ?? null);
@@ -1327,17 +1319,18 @@ export default function MePage() {
         </Link>
       </section>
 
-      <section className="border-b pb-6">
-        <h2 className="font-medium">내 글</h2>
-        {posts.length === 0 ? (
-          <p className="text-sm text-zinc-600">작성한 글이 없습니다.</p>
-        ) : (
-          <ul className="list-disc pl-5 text-sm">
-            {posts.map((p) => (
-              <li key={p.id}>{p.title}</li>
-            ))}
-          </ul>
-        )}
+      <section className="space-y-2 border-b pb-6">
+        <h2 className="font-medium">나의 농장 관리</h2>
+        <p className="text-sm text-zinc-600">
+          내 농장 상세 페이지에서 상품과 정보를 관리하세요.
+        </p>
+        <button
+          type="button"
+          onClick={() => router.push(`/farms/${session?.user.id ?? ""}`)}
+          className="inline-flex rounded border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-800 shadow-sm hover:bg-zinc-50"
+        >
+          내 농장 페이지로 이동
+        </button>
       </section>
 
       <section className="border-b pb-6">
