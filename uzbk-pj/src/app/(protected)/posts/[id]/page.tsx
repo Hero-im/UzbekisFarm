@@ -270,6 +270,12 @@ export default function PostDetailPage() {
   const statusOption =
     STATUS_OPTIONS.find((option) => option.value === currentStatus) ??
     STATUS_OPTIONS[0];
+  const statusBadgeClass =
+    currentStatus === "ON_SALE"
+      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+      : currentStatus === "RESERVED"
+      ? "bg-amber-50 text-amber-700 border-amber-100"
+      : "bg-zinc-100 text-zinc-700 border-zinc-200";
   const priceLabel =
     post?.price != null ? `${post.price.toLocaleString("ko-KR")}원` : "가격 미정";
   const isSoldOut = post?.stock_quantity === 0;
@@ -710,99 +716,158 @@ export default function PostDetailPage() {
   if (!post) return <p>게시글을 찾을 수 없습니다.</p>;
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-8">
+    <div className="mx-auto w-full max-w-6xl space-y-8 px-4 pb-12 md:px-0">
       <div className="grid gap-8 lg:grid-cols-[1.1fr,0.9fr]">
         <div className="space-y-4">
-          <div className="relative overflow-hidden rounded-2xl border bg-zinc-50">
+          <div className="relative overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
             {currentImage ? (
               <img
                 src={currentImage.url}
                 alt="post"
-                className="h-[420px] w-full object-cover"
+                className="h-[460px] w-full object-cover"
               />
             ) : (
-              <div className="flex h-[420px] items-center justify-center text-sm text-zinc-400">
+              <div className="flex h-[460px] items-center justify-center text-sm text-zinc-400">
                 이미지가 없습니다.
               </div>
             )}
             {images.length > 1 && (
-              <div className="absolute right-4 top-4 rounded-full bg-zinc-900/80 px-3 py-1 text-xs text-white">
+              <div className="absolute right-5 top-5 rounded-full bg-zinc-900/80 px-3 py-1 text-xs text-white">
                 {current + 1}/{images.length}
               </div>
             )}
-          </div>
-          {images.length > 1 && (
-            <div className="flex items-center justify-between text-sm">
-              <button
-                className="rounded border px-3 py-1"
-                onClick={() =>
-                  setCurrent((prev) =>
-                    prev === 0 ? images.length - 1 : prev - 1
-                  )
-                }
+            <div className="absolute left-5 top-5 flex items-center gap-2">
+              <span
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusBadgeClass}`}
               >
-                이전
-              </button>
-              <span className="text-xs text-zinc-500">
-                {current + 1} / {images.length}
+                {statusOption.label}
               </span>
-              <button
-                className="rounded border px-3 py-1"
-                onClick={() => setCurrent((prev) => (prev + 1) % images.length)}
-              >
-                다음
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-400">
-              {post.category ?? "카테고리 없음"}
-            </div>
-            <h1 className="text-2xl font-semibold">{post.title}</h1>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="text-3xl font-semibold">{priceLabel}</div>
               {isSoldOut && (
                 <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
                   SOLD OUT
                 </span>
               )}
             </div>
-            <div className="text-sm text-zinc-500">
-              {post.region_name ?? post.region_code} · 재고 {stockLabel}
-              {unitLabel ? ` · ${unitLabel}` : ""}
-            </div>
-            <div
-              className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${statusOption.className}`}
-            >
-              {statusOption.label}
-            </div>
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-lg text-zinc-700 shadow-sm hover:bg-white"
+                  onClick={() =>
+                    setCurrent((prev) =>
+                      prev === 0 ? images.length - 1 : prev - 1
+                    )
+                  }
+                  aria-label="이전 이미지"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-lg text-zinc-700 shadow-sm hover:bg-white"
+                  onClick={() =>
+                    setCurrent((prev) => (prev + 1) % images.length)
+                  }
+                  aria-label="다음 이미지"
+                >
+                  ›
+                </button>
+              </>
+            )}
           </div>
-
-          <div className="rounded-2xl border p-4 text-sm leading-6 text-zinc-700">
-            {desc}
-          </div>
-
-          <div className="rounded-2xl border p-4 text-sm">
-            <div className="text-xs uppercase tracking-[0.2em] text-zinc-400">
-              판매자 정보
+          {images.length > 1 && (
+            <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
+              {images.map((img, index) => (
+                <button
+                  key={img.id}
+                  type="button"
+                  className={`overflow-hidden rounded-2xl border p-1 transition ${
+                    current === index
+                      ? "border-lime-500 ring-2 ring-lime-200"
+                      : "border-zinc-200 hover:border-zinc-400"
+                  }`}
+                  onClick={() => setCurrent(index)}
+                >
+                  <img
+                    src={img.url}
+                    alt={`thumbnail-${index + 1}`}
+                    className="h-20 w-full rounded-xl object-cover"
+                  />
+                </button>
+              ))}
             </div>
-            <div className="mt-2 space-y-1 text-zinc-700">
-              <div>닉네임: {seller?.nickname ?? "미설정"}</div>
-              <div>
-                지역: {seller?.region_name ?? seller?.region_code ?? "미설정"}
+          )}
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+              <span className="rounded-full bg-zinc-100 px-3 py-1">
+                {post.category ?? "카테고리 없음"}
+              </span>
+              <span className="text-zinc-400">·</span>
+              <span>상품 등록일 {post.created_at.slice(0, 10)}</span>
+            </div>
+            <h1 className="mt-3 text-3xl font-semibold text-zinc-900">
+              {post.title}
+            </h1>
+            <div className="mt-4 flex items-end justify-between">
+              <div className="text-sm text-zinc-500">판매가</div>
+              <div className="text-3xl font-bold text-lime-700">
+                {priceLabel}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 rounded-2xl bg-zinc-50 p-4 text-sm text-zinc-600">
+              <div className="flex items-center justify-between">
+                <span>재고</span>
+                <span className="font-medium text-zinc-900">{stockLabel}</span>
+              </div>
+              {unitLabel && (
+                <div className="flex items-center justify-between">
+                  <span>판매 단위</span>
+                  <span className="font-medium text-zinc-900">{unitLabel}</span>
+                </div>
+              )}
+              {post.delivery_type && (
+                <div className="flex items-center justify-between">
+                  <span>배송 유형</span>
+                  <span className="font-medium text-zinc-900">
+                    {post.delivery_type}
+                  </span>
+                </div>
+              )}
+              <div className="flex items-center justify-between">
+                <span>지역</span>
+                <span className="font-medium text-zinc-900">
+                  {post.region_name ?? post.region_code ?? "미설정"}
+                </span>
               </div>
             </div>
           </div>
 
+          <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-xs font-semibold text-zinc-400">상품 설명</div>
+            <p className="mt-3 text-sm leading-6 text-zinc-700">{desc}</p>
+          </div>
+
+          <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
+            <div className="text-xs font-semibold text-zinc-400">
+              판매자 정보
+            </div>
+            <div className="mt-2 text-sm font-semibold text-zinc-900">
+              {seller?.nickname ?? "미설정"}
+            </div>
+            <div className="mt-1 text-xs text-zinc-500">
+              {seller?.region_name ?? seller?.region_code ?? "미설정"}
+            </div>
+          </div>
+
           {isSeller && (
-            <div className="space-y-3 rounded-2xl border p-4">
+            <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
               <div className="flex items-center gap-2 text-sm text-zinc-600">
                 <span>상태 변경</span>
                 <select
-                  className="rounded border px-2 py-1 text-zinc-700"
+                  className="rounded border border-zinc-300 px-2 py-1 text-zinc-700"
                   value={currentStatus}
                   onChange={(e) => handleStatusChange(e.target.value)}
                 >
@@ -817,11 +882,13 @@ export default function PostDetailPage() {
                   ))}
                 </select>
               </div>
-              <div className="flex gap-2">
-                <button className="rounded border px-4 py-2">편집(선택)</button>
+              <div className="mt-4 flex gap-2">
+                <button className="rounded border border-zinc-300 px-4 py-2 text-sm">
+                  편집(선택)
+                </button>
                 <button
                   onClick={handleDelete}
-                  className="rounded bg-red-600 px-4 py-2 text-white"
+                  className="rounded bg-red-600 px-4 py-2 text-sm text-white"
                 >
                   삭제
                 </button>
@@ -831,12 +898,7 @@ export default function PostDetailPage() {
 
           {!isSeller && (
             <div className="space-y-4">
-              {post.delivery_type && (
-                <div className="rounded-2xl border p-4 text-sm text-zinc-600">
-                  배송 유형: {post.delivery_type}
-                </div>
-              )}
-              <div className="sticky bottom-0 -mx-6 border-t border-zinc-200 bg-white/95 p-4 backdrop-blur md:static md:mx-0 md:border-0 md:bg-transparent md:p-0">
+              <div className="rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
                 <div className="flex w-full gap-3">
                   <button
                     onClick={handleChat}
@@ -851,6 +913,14 @@ export default function PostDetailPage() {
                   >
                     {isSoldOut ? "품절" : "바로 구매"}
                   </button>
+                </div>
+              </div>
+              <div className="sticky bottom-0 -mx-4 rounded-2xl border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur md:static md:mx-0">
+                <div className="flex items-center justify-between text-sm text-zinc-600">
+                  <span>현재 재고</span>
+                  <span className="font-semibold text-zinc-900">
+                    {stockLabel}
+                  </span>
                 </div>
               </div>
             </div>

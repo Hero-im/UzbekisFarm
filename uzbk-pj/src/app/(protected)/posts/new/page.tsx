@@ -180,6 +180,7 @@ export default function NewPostPage() {
         unit_size: unitSize ? Number(unitSize) : null,
         unit,
         delivery_type: deliveryType,
+        harvest_date: harvestDate || null,
         status: "ON_SALE",
         category,
       })
