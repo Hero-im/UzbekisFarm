@@ -292,11 +292,11 @@ export default function FeedPage() {
           if (fallbackError) {
             errorMessage = fallbackError.message;
           } else {
-            data = fallbackData as Post[] | null;
+            data = (fallbackData ?? null) as unknown as Post[] | null;
           }
         }
       } else {
-        data = primaryData as Post[] | null;
+        data = (primaryData ?? null) as unknown as Post[] | null;
       }
 
       if (cancelled) return;
