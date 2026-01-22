@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 import { useAuth } from "@/lib/auth-context";
 
@@ -11,9 +11,19 @@ const UNIT_OPTIONS = ["kg", "g", "박스", "개"];
 const DELIVERY_TYPES = ["직거래", "팜스토어 배달", "개인 배달"];
 const MAX_SIZE_MB = 5;
 
+type ExistingImage = {
+  id: string;
+  storage_path: string;
+  sort_order: number;
+  url: string;
+};
+
 export default function NewPostPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
+  const editPostId = searchParams.get("edit");
+  const isEditing = Boolean(editPostId);
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -37,6 +47,11 @@ export default function NewPostPage() {
   const [sellerStatus, setSellerStatus] = useState<
     "none" | "pending" | "approved" | "rejected"
   >("none");
+  const [existingImages, setExistingImages] = useState<ExistingImage[]>([]);
+  const [removedImages, setRemovedImages] = useState<ExistingImage[]>([]);
+
+  const MAX_IMAGES = 10;
+  const totalImageCount = existingImages.length + files.length;
 
   const inputBase =
     "w-full rounded border border-zinc-300 bg-white px-3 py-2 text-zinc-900 shadow-sm focus:border-zinc-900 focus:outline-none focus:ring-2 focus:ring-zinc-200";
@@ -74,6 +89,119 @@ export default function NewPostPage() {
     };
   }, [session]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadEditPost = async () => {
+      if (!session || !editPostId) {
+        setExistingImages([]);
+        setRemovedImages([]);
+        setFiles([]);
+        setTitle("");
+        setDescription("");
+        setCategory(CATEGORIES[0]);
+        setFarmingMethod(FARMING_METHODS[0]);
+        setHarvestDate("");
+        setUnit(UNIT_OPTIONS[0]);
+        setUnitSize("");
+        setDeliveryType(DELIVERY_TYPES[0]);
+        setRegionCode("");
+        setRegionName("");
+        setPrice("");
+        setQuantity("");
+        setMessage("");
+        return;
+      }
+
+      let postData: any = null;
+      let postError: { message: string } | null = null;
+      const primary = await supabase
+        .from("posts")
+        .select(
+          "id,user_id,title,description,content,price,stock_quantity,category,harvest_date,unit,unit_size,delivery_type,region_code,region_name,farming_method"
+        )
+        .eq("id", editPostId)
+        .single();
+
+      if (primary.error) {
+        const message = primary.error.message ?? "";
+        if (message.includes("harvest_date")) {
+          const fallback = await supabase
+            .from("posts")
+            .select(
+              "id,user_id,title,description,content,price,stock_quantity,category,unit,unit_size,delivery_type,region_code,region_name,farming_method"
+            )
+            .eq("id", editPostId)
+            .single();
+          postData = fallback.data ?? null;
+          postError = fallback.error
+            ? { message: fallback.error.message }
+            : null;
+        } else {
+          postError = { message: message || "게시글 불러오기 실패" };
+        }
+      } else {
+        postData = primary.data ?? null;
+      }
+
+      if (cancelled) return;
+      if (postError || !postData) {
+        setMessage(postError?.message ?? "게시글 불러오기 실패");
+        return;
+      }
+      if (postData.user_id !== session.user.id) {
+        setMessage("수정 권한이 없습니다.");
+        return;
+      }
+
+      setTitle(postData.title ?? "");
+      setDescription(postData.description ?? postData.content ?? "");
+      setCategory(postData.category ?? CATEGORIES[0]);
+      setFarmingMethod(postData.farming_method ?? FARMING_METHODS[0]);
+      setHarvestDate(postData.harvest_date ?? "");
+      setUnit(postData.unit ?? UNIT_OPTIONS[0]);
+      setUnitSize(postData.unit_size != null ? String(postData.unit_size) : "");
+      setDeliveryType(postData.delivery_type ?? DELIVERY_TYPES[0]);
+      setRegionCode(postData.region_code ?? "");
+      setRegionName(postData.region_name ?? "");
+      setPrice(
+        postData.price != null ? postData.price.toLocaleString("ko-KR") : ""
+      );
+      setQuantity(
+        postData.stock_quantity != null ? String(postData.stock_quantity) : ""
+      );
+      setFiles([]);
+      setRemovedImages([]);
+      setMessage("");
+
+      const { data: imageData } = await supabase
+        .from("post_images")
+        .select("id,storage_path,sort_order")
+        .eq("post_id", editPostId)
+        .order("sort_order", { ascending: true });
+
+      const mapped = (imageData ?? []).map((img) => {
+        const { data } = supabase.storage
+          .from("post-images")
+          .getPublicUrl(img.storage_path);
+        return {
+          id: img.id,
+          storage_path: img.storage_path,
+          sort_order: img.sort_order,
+          url: data.publicUrl,
+        };
+      });
+
+      setExistingImages(mapped);
+      setRemovedImages([]);
+    };
+
+    loadEditPost();
+    return () => {
+      cancelled = true;
+    };
+  }, [session, editPostId]);
+
   const previewUrls = useMemo(
     () => files.map((file) => URL.createObjectURL(file)),
     [files]
@@ -97,8 +225,22 @@ export default function NewPostPage() {
       return;
     }
 
-    setFiles(selected);
+    if (totalImageCount + selected.length > MAX_IMAGES) {
+      setMessage(`이미지는 최대 ${MAX_IMAGES}장까지 업로드할 수 있습니다.`);
+      return;
+    }
+
+    setFiles((prev) => [...prev, ...selected]);
     setMessage("");
+  };
+
+  const handleRemoveNewFile = (index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveExisting = (image: ExistingImage) => {
+    setExistingImages((prev) => prev.filter((img) => img.id !== image.id));
+    setRemovedImages((prev) => [...prev, image]);
   };
 
   const formatNumber = (value: string) => {
@@ -139,7 +281,7 @@ export default function NewPostPage() {
       setMessage("로그인이 필요합니다.");
       return;
     }
-    if (sellerStatus !== "approved") {
+    if (sellerStatus !== "approved" && !isEditing) {
       setMessage("판매자 인증 승인 후 등록할 수 있습니다.");
       return;
     }
@@ -179,7 +321,7 @@ export default function NewPostPage() {
       unit_size: unitSize ? Number(unitSize) : null,
       unit,
       delivery_type: deliveryType,
-      status: "ON_SALE",
+      farming_method: farmingMethod,
       category,
     };
     const payloadWithHarvest = {
@@ -189,29 +331,61 @@ export default function NewPostPage() {
 
     let post: { id: string } | null = null;
     let postError: { message: string } | null = null;
-    const primary = await supabase
-      .from("posts")
-      .insert(payloadWithHarvest)
-      .select("id")
-      .single();
 
-    if (primary.error) {
-      const message = primary.error.message ?? "";
-      if (message.includes("harvest_date")) {
-        const fallback = await supabase
-          .from("posts")
-          .insert(basePayload)
-          .select("id")
-          .single();
-        post = (fallback.data as { id: string }) ?? null;
-        postError = fallback.error
-          ? { message: fallback.error.message }
-          : null;
+    if (isEditing && editPostId) {
+      const updateWithHarvest = await supabase
+        .from("posts")
+        .update(payloadWithHarvest)
+        .eq("id", editPostId)
+        .eq("user_id", session.user.id)
+        .select("id")
+        .single();
+
+      if (updateWithHarvest.error) {
+        const message = updateWithHarvest.error.message ?? "";
+        if (message.includes("harvest_date")) {
+          const fallback = await supabase
+            .from("posts")
+            .update(basePayload)
+            .eq("id", editPostId)
+            .eq("user_id", session.user.id)
+            .select("id")
+            .single();
+          post = (fallback.data as { id: string }) ?? null;
+          postError = fallback.error
+            ? { message: fallback.error.message }
+            : null;
+        } else {
+          postError = { message: message || "게시글 수정 실패" };
+        }
       } else {
-        postError = { message: message || "게시글 등록 실패" };
+        post = (updateWithHarvest.data as { id: string }) ?? null;
       }
     } else {
-      post = (primary.data as { id: string }) ?? null;
+      const primary = await supabase
+        .from("posts")
+        .insert({ ...payloadWithHarvest, status: "ON_SALE" })
+        .select("id")
+        .single();
+
+      if (primary.error) {
+        const message = primary.error.message ?? "";
+        if (message.includes("harvest_date")) {
+          const fallback = await supabase
+            .from("posts")
+            .insert({ ...basePayload, status: "ON_SALE" })
+            .select("id")
+            .single();
+          post = (fallback.data as { id: string }) ?? null;
+          postError = fallback.error
+            ? { message: fallback.error.message }
+            : null;
+        } else {
+          postError = { message: message || "게시글 등록 실패" };
+        }
+      } else {
+        post = (primary.data as { id: string }) ?? null;
+      }
     }
 
     if (postError || !post) {
@@ -228,6 +402,35 @@ export default function NewPostPage() {
       storage_path: string;
       sort_order: number;
     }[] = [];
+
+    const maxSortOrder = existingImages.reduce(
+      (max, img) => Math.max(max, img.sort_order ?? 0),
+      0
+    );
+
+    if (isEditing && removedImages.length > 0) {
+      const removedIds = removedImages.map((img) => img.id);
+      const removedPaths = removedImages.map((img) => img.storage_path);
+      if (removedPaths.length > 0) {
+        const { error: storageError } = await supabase.storage
+          .from("post-images")
+          .remove(removedPaths);
+        if (storageError) {
+          setMessage(storageError.message);
+          setUploading(false);
+          return;
+        }
+      }
+      const { error: removeError } = await supabase
+        .from("post_images")
+        .delete()
+        .in("id", removedIds);
+      if (removeError) {
+        setMessage(removeError.message);
+        setUploading(false);
+        return;
+      }
+    }
 
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
@@ -248,7 +451,7 @@ export default function NewPostPage() {
         post_id: postId,
         user_id: session.user.id,
         storage_path: path,
-        sort_order: i,
+        sort_order: maxSortOrder + i + 1,
       });
       setUploadedCount(i + 1);
     }
@@ -271,7 +474,9 @@ export default function NewPostPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold">상품 등록</h1>
+      <h1 className="text-2xl font-bold">
+        {isEditing ? "상품 수정" : "상품 등록"}
+      </h1>
       <p className="text-sm text-zinc-600">
         동네: {regionName || regionCode || "미설정"}
       </p>
@@ -301,8 +506,11 @@ export default function NewPostPage() {
           }}
         >
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="flex items-center gap-2">
               <p className={labelText}>이미지 업로드</p>
+              <span className="text-xs font-semibold text-lime-600">
+                ({totalImageCount}/{MAX_IMAGES})
+              </span>
               <p className="text-xs text-zinc-500">
                 드래그 앤 드롭 또는 파일 선택 (최대 {MAX_SIZE_MB}MB)
               </p>
@@ -314,23 +522,51 @@ export default function NewPostPage() {
                 accept="image/*"
                 multiple
                 className="hidden"
-                onChange={(e) => handleFiles(e.target.files)}
+                onChange={(e) => {
+                  handleFiles(e.target.files);
+                  e.currentTarget.value = "";
+                }}
               />
             </label>
           </div>
-          {files.length > 0 && (
+          {(existingImages.length > 0 || files.length > 0) && (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {existingImages.map((img) => (
+                <div
+                  key={img.id}
+                  className="group relative aspect-square overflow-hidden rounded border border-zinc-200 bg-zinc-50"
+                >
+                  <img
+                    src={img.url}
+                    alt="기존 이미지"
+                    className="h-full w-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveExisting(img)}
+                    className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-xs text-zinc-700 shadow-sm opacity-0 transition group-hover:opacity-100"
+                  >
+                    삭제
+                  </button>
+                </div>
+              ))}
               {previewUrls.map((src, index) => (
                 <div
                   key={`${files[index]?.name}-${index}`}
-                  className="aspect-square overflow-hidden rounded border border-zinc-200 bg-zinc-50"
+                  className="group relative aspect-square overflow-hidden rounded border border-dashed border-zinc-300 bg-white"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={src}
-                    alt={`업로드 이미지 ${index + 1}`}
+                    alt={`새 이미지 ${index + 1}`}
                     className="h-full w-full object-cover"
                   />
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveNewFile(index)}
+                    className="absolute right-2 top-2 rounded-full bg-white/90 px-2 py-1 text-xs text-zinc-700 shadow-sm opacity-0 transition group-hover:opacity-100"
+                  >
+                    삭제
+                  </button>
                 </div>
               ))}
             </div>
@@ -485,14 +721,28 @@ export default function NewPostPage() {
           </label>
         </div>
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          {isEditing && (
+            <button
+              type="button"
+              className="w-full rounded border border-zinc-300 bg-white px-5 py-3 text-zinc-700 shadow-sm hover:border-zinc-900 sm:w-auto"
+              onClick={() => router.push(`/posts/${editPostId}`)}
+              disabled={uploading}
+            >
+              취소
+            </button>
+          )}
           <button
             type="submit"
             className="w-full rounded bg-lime-600 px-5 py-3 text-white shadow-sm hover:bg-lime-500 sm:w-auto"
             disabled={uploading}
           >
             {uploading
-              ? `업로드 중... (${uploadedCount}/${files.length})`
+              ? files.length > 0
+                ? `업로드 중... (${uploadedCount}/${files.length})`
+                : "저장 중..."
+              : isEditing
+              ? "수정 저장"
               : "등록"}
           </button>
         </div>

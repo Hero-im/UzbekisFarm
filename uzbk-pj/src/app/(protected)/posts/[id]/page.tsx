@@ -19,6 +19,7 @@ type Post = {
   unit_size: number | null;
   unit: string | null;
   delivery_type: string | null;
+  farming_method: string | null;
   category: string | null;
   created_at: string;
   status: string | null;
@@ -65,6 +66,7 @@ export default function PostDetailPage() {
   const [post, setPost] = useState<Post | null>(null);
   const [images, setImages] = useState<ImageRow[]>([]);
   const [seller, setSeller] = useState<Seller | null>(null);
+  const [farmName, setFarmName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [current, setCurrent] = useState(0);
@@ -98,6 +100,8 @@ export default function PostDetailPage() {
   const [addressPickerError, setAddressPickerError] = useState("");
   const [useManualAddress, setUseManualAddress] = useState(false);
   const [memoPreset, setMemoPreset] = useState("문 앞에 놔주세요");
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [modalIndex, setModalIndex] = useState(0);
   const formatPhone = (value: string) => {
     const digits = value.replace(/[^\d]/g, "");
     if (digits.length <= 3) return digits;
@@ -154,7 +158,7 @@ export default function PostDetailPage() {
       const { data: postData, error } = await supabase
         .from("posts")
         .select(
-          "id,user_id,title,description,content,region_name,region_code,price,category,created_at,status,stock_quantity,unit_size,unit,delivery_type"
+          "id,user_id,title,description,content,region_name,region_code,price,category,created_at,status,stock_quantity,unit_size,unit,delivery_type,farming_method"
         )
         .eq("id", postId)
         .single();
@@ -192,10 +196,18 @@ export default function PostDetailPage() {
         .eq("id", postData.user_id)
         .single();
 
+      const { data: farmData } = await supabase
+        .from("seller_verifications")
+        .select("farm_name")
+        .eq("user_id", postData.user_id)
+        .eq("status", "approved")
+        .maybeSingle();
+
       setPost(postData as Post);
       setStatusDraft(postData.status ?? "ON_SALE");
       setImages(imgRows);
       setSeller(sellerData ?? null);
+      setFarmName(farmData?.farm_name ?? null);
       setLoading(false);
     };
 
@@ -264,18 +276,23 @@ export default function PostDetailPage() {
   }, [session, post]);
 
   const desc = post?.description ?? post?.content ?? "";
-  const currentImage = images[current];
-  const primaryImage = currentImage?.url ?? images[0]?.url ?? null;
+  const PAGE_SIZE = 3;
+  const totalPages = Math.max(1, Math.ceil(images.length / PAGE_SIZE));
+  const currentPage = Math.min(current, totalPages - 1);
+  const startIndex = currentPage * PAGE_SIZE;
+  const visibleImages = images.slice(startIndex, startIndex + PAGE_SIZE);
+  const placeholderCount = Math.max(0, PAGE_SIZE - visibleImages.length);
+  const primaryImage = images[0]?.url ?? null;
   const currentStatus = statusDraft;
   const statusOption =
     STATUS_OPTIONS.find((option) => option.value === currentStatus) ??
     STATUS_OPTIONS[0];
   const statusBadgeClass =
     currentStatus === "ON_SALE"
-      ? "bg-emerald-50 text-emerald-700 border-emerald-100"
+      ? "bg-blue-50 text-blue-700 border-blue-200"
       : currentStatus === "RESERVED"
-      ? "bg-amber-50 text-amber-700 border-amber-100"
-      : "bg-zinc-100 text-zinc-700 border-zinc-200";
+      ? "bg-green-50 text-green-700 border-green-200"
+      : "bg-red-50 text-red-700 border-red-200";
   const priceLabel =
     post?.price != null ? `${post.price.toLocaleString("ko-KR")}원` : "가격 미정";
   const isSoldOut = post?.stock_quantity === 0;
@@ -309,9 +326,30 @@ export default function PostDetailPage() {
     setAutoBuyOpened(true);
   }, [searchParams, autoBuyOpened, isSeller]);
 
+  useEffect(() => {
+    setCurrent((prev) => Math.min(prev, totalPages - 1));
+  }, [totalPages]);
+
+  useEffect(() => {
+    if (!isImageModalOpen) return;
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsImageModalOpen(false);
+      }
+      if (event.key === "ArrowLeft" && images.length > 1) {
+        setModalIndex((prev) => (prev === 0 ? images.length - 1 : prev - 1));
+      }
+      if (event.key === "ArrowRight" && images.length > 1) {
+        setModalIndex((prev) => (prev + 1) % images.length);
+      }
+    };
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [isImageModalOpen, images.length]);
+
   const handleDelete = async () => {
     if (!post || !session) return;
-    if (!confirm("삭제할까요?")) return;
+    if (!confirm("등록하신 상품을 삭제하시겠습니까?")) return;
 
     const { data: imgData } = await supabase
       .from("post_images")
@@ -719,84 +757,155 @@ export default function PostDetailPage() {
     <div className="mx-auto w-full max-w-6xl space-y-8 px-4 pb-12 md:px-0">
       <div className="grid gap-8 lg:grid-cols-[1.1fr,0.9fr]">
         <div className="space-y-4">
-          <div className="relative overflow-hidden rounded-3xl border border-zinc-200 bg-white shadow-sm">
-            {currentImage ? (
-              <img
-                src={currentImage.url}
-                alt="post"
-                className="h-[460px] w-full object-cover"
-              />
+          <div className="relative rounded-3xl border border-zinc-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div className="flex flex-1 flex-wrap items-center gap-4">
+                <span
+                  className={`rounded-full border px-5 py-2 text-base font-semibold ${statusBadgeClass}`}
+                >
+                  {statusOption.label}
+                </span>
+                {!isSeller && (
+                  <div className="text-base text-zinc-500 leading-relaxed">
+                    <div>작성자: {seller?.nickname ?? "판매자"}</div>
+                    <div>등록일: {post.created_at.slice(0, 10)}</div>
+                  </div>
+                )}
+                {isSeller && (
+                  <select
+                    className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700"
+                    value={currentStatus}
+                    onChange={(e) => handleStatusChange(e.target.value)}
+                  >
+                    {STATUS_OPTIONS.map((option) => (
+                      <option
+                        key={option.value}
+                        value={option.value}
+                        className={option.className}
+                      >
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {isSoldOut && (
+                  <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
+                    SOLD OUT
+                  </span>
+                )}
+                {images.length > 0 && totalPages > 1 && (
+                  <span className="rounded-full bg-zinc-900/80 px-3 py-1 text-xs text-white">
+                    {currentPage + 1}/{totalPages}
+                  </span>
+                )}
+              </div>
+              {!isSeller && (
+                <button
+                  type="button"
+                  onClick={() => router.push(`/farms/${post.user_id}`)}
+                  className="inline-flex shrink-0 items-center gap-3 rounded-full border border-zinc-200 bg-white px-5 py-2.5 text-base text-zinc-700 hover:border-zinc-900"
+                >
+                  <svg
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 10l9-6 9 6" />
+                    <path d="M5 10v10h14V10" />
+                    <path d="M10 20v-6h4v6" />
+                  </svg>
+                  <span className="whitespace-nowrap">
+                    <span className="text-[13px] text-zinc-500">
+                      {(seller?.nickname ?? "판매자") + "님의 농장"}
+                    </span>{" "}
+                    <span className="font-semibold text-zinc-800">
+                      {(farmName ?? "농장") + " 바로가기"}
+                    </span>
+                  </span>
+                </button>
+              )}
+              {isSeller && (
+                <div className="flex flex-wrap items-center gap-2 text-sm text-zinc-600">
+                  <button
+                    type="button"
+                    className="rounded border border-zinc-300 px-3 py-1 text-sm"
+                    onClick={() => router.push(`/posts/new?edit=${post.id}`)}
+                  >
+                    수정
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    className="rounded bg-red-600 px-3 py-1 text-sm text-white"
+                  >
+                    삭제
+                  </button>
+                </div>
+              )}
+            </div>
+            {images.length > 0 ? (
+              <div className="grid grid-cols-3 gap-3">
+                {visibleImages.map((img, index) => (
+                  <button
+                    key={img.id}
+                    type="button"
+                    onClick={() => {
+                      setModalIndex(startIndex + index);
+                      setIsImageModalOpen(true);
+                    }}
+                    className="relative aspect-square overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-100 cursor-zoom-in"
+                  >
+                    <img
+                      src={img.url}
+                      alt={`post-${startIndex + index + 1}`}
+                      className="h-full w-full object-cover"
+                    />
+                  </button>
+                ))}
+                {Array.from({ length: placeholderCount }).map((_, index) => (
+                  <div
+                    key={`placeholder-${index}`}
+                    className="aspect-square rounded-2xl border border-dashed border-zinc-200 bg-zinc-50"
+                  />
+                ))}
+              </div>
             ) : (
-              <div className="flex h-[460px] items-center justify-center text-sm text-zinc-400">
+              <div className="flex h-[220px] items-center justify-center rounded-2xl border border-dashed border-zinc-200 text-sm text-zinc-400">
                 이미지가 없습니다.
               </div>
             )}
-            {images.length > 1 && (
-              <div className="absolute right-5 top-5 rounded-full bg-zinc-900/80 px-3 py-1 text-xs text-white">
-                {current + 1}/{images.length}
-              </div>
-            )}
-            <div className="absolute left-5 top-5 flex items-center gap-2">
-              <span
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${statusBadgeClass}`}
-              >
-                {statusOption.label}
-              </span>
-              {isSoldOut && (
-                <span className="rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-semibold text-red-600">
-                  SOLD OUT
-                </span>
-              )}
-            </div>
-            {images.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  className="absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-lg text-zinc-700 shadow-sm hover:bg-white"
-                  onClick={() =>
-                    setCurrent((prev) =>
-                      prev === 0 ? images.length - 1 : prev - 1
-                    )
-                  }
-                  aria-label="이전 이미지"
-                >
-                  ‹
-                </button>
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-lg text-zinc-700 shadow-sm hover:bg-white"
-                  onClick={() =>
-                    setCurrent((prev) => (prev + 1) % images.length)
-                  }
-                  aria-label="다음 이미지"
-                >
-                  ›
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              className="absolute -left-12 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-lg text-zinc-700 shadow-sm hover:bg-white disabled:cursor-default disabled:opacity-40"
+              onClick={() =>
+                setCurrent((prev) =>
+                  prev === 0 ? totalPages - 1 : prev - 1
+                )
+              }
+              aria-label="이전 이미지"
+              disabled={totalPages <= 1}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="absolute -right-12 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white/90 text-lg text-zinc-700 shadow-sm hover:bg-white disabled:cursor-default disabled:opacity-40"
+              onClick={() =>
+                setCurrent((prev) =>
+                  prev === totalPages - 1 ? 0 : prev + 1
+                )
+              }
+              aria-label="다음 이미지"
+              disabled={totalPages <= 1}
+            >
+              ›
+            </button>
           </div>
-          {images.length > 1 && (
-            <div className="grid grid-cols-4 gap-3 sm:grid-cols-5">
-              {images.map((img, index) => (
-                <button
-                  key={img.id}
-                  type="button"
-                  className={`overflow-hidden rounded-2xl border p-1 transition ${
-                    current === index
-                      ? "border-lime-500 ring-2 ring-lime-200"
-                      : "border-zinc-200 hover:border-zinc-400"
-                  }`}
-                  onClick={() => setCurrent(index)}
-                >
-                  <img
-                    src={img.url}
-                    alt={`thumbnail-${index + 1}`}
-                    className="h-20 w-full rounded-xl object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          )}
         </div>
 
         <div className="space-y-6">
@@ -837,6 +946,12 @@ export default function PostDetailPage() {
                 </div>
               )}
               <div className="flex items-center justify-between">
+                <span>재배 방식</span>
+                <span className="font-medium text-zinc-900">
+                  {post.farming_method ?? "미설정"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
                 <span>지역</span>
                 <span className="font-medium text-zinc-900">
                   {post.region_name ?? post.region_code ?? "미설정"}
@@ -850,51 +965,8 @@ export default function PostDetailPage() {
             <p className="mt-3 text-sm leading-6 text-zinc-700">{desc}</p>
           </div>
 
-          <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-            <div className="text-xs font-semibold text-zinc-400">
-              판매자 정보
-            </div>
-            <div className="mt-2 text-sm font-semibold text-zinc-900">
-              {seller?.nickname ?? "미설정"}
-            </div>
-            <div className="mt-1 text-xs text-zinc-500">
-              {seller?.region_name ?? seller?.region_code ?? "미설정"}
-            </div>
-          </div>
 
-          {isSeller && (
-            <div className="rounded-3xl border border-zinc-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center gap-2 text-sm text-zinc-600">
-                <span>상태 변경</span>
-                <select
-                  className="rounded border border-zinc-300 px-2 py-1 text-zinc-700"
-                  value={currentStatus}
-                  onChange={(e) => handleStatusChange(e.target.value)}
-                >
-                  {STATUS_OPTIONS.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                      className={option.className}
-                    >
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mt-4 flex gap-2">
-                <button className="rounded border border-zinc-300 px-4 py-2 text-sm">
-                  편집(선택)
-                </button>
-                <button
-                  onClick={handleDelete}
-                  className="rounded bg-red-600 px-4 py-2 text-sm text-white"
-                >
-                  삭제
-                </button>
-              </div>
-            </div>
-          )}
+          {isSeller && null}
 
           {!isSeller && (
             <div className="space-y-4">
@@ -902,31 +974,113 @@ export default function PostDetailPage() {
                 <div className="flex w-full gap-3">
                   <button
                     onClick={handleChat}
-                    className="flex-[3] rounded border border-zinc-300 px-4 py-3 text-sm text-zinc-700 hover:border-zinc-900"
+                    className="flex-1 rounded border border-zinc-300 px-4 py-2 text-xl font-bold text-zinc-700 hover:border-zinc-900"
                   >
-                    채팅하기
+                    <span className="inline-flex items-center gap-2">
+                      <svg
+                        width="28"
+                        height="28"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M21 15a4 4 0 0 1-4 4H7l-4 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+                      </svg>
+                      채팅하기
+                    </span>
                   </button>
                   <button
                     onClick={handleBuyClick}
                     disabled={isStockUnavailable || post.price == null}
-                    className="flex-[7] rounded bg-lime-600 px-4 py-3 text-sm font-semibold text-white shadow-sm hover:bg-lime-500 disabled:cursor-not-allowed disabled:bg-zinc-300"
+                    className="flex-1 rounded bg-lime-600 px-4 py-2 text-xl font-bold text-white shadow-sm hover:bg-lime-500 disabled:cursor-not-allowed disabled:bg-zinc-300"
                   >
-                    {isSoldOut ? "품절" : "바로 구매"}
+                    <span className="inline-flex items-center gap-2">
+                      <svg
+                        width="28"
+                        height="28"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <rect x="2" y="5" width="20" height="14" rx="2" />
+                        <path d="M2 10h20" />
+                        <path d="M6 15h4" />
+                      </svg>
+                      {isSoldOut ? "품절" : "바로 구매"}
+                    </span>
                   </button>
-                </div>
-              </div>
-              <div className="sticky bottom-0 -mx-4 rounded-2xl border border-zinc-200 bg-white/95 p-4 shadow-sm backdrop-blur md:static md:mx-0">
-                <div className="flex items-center justify-between text-sm text-zinc-600">
-                  <span>현재 재고</span>
-                  <span className="font-semibold text-zinc-900">
-                    {stockLabel}
-                  </span>
                 </div>
               </div>
             </div>
           )}
         </div>
       </div>
+
+      {isImageModalOpen && images.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-6"
+          onClick={() => setIsImageModalOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl rounded-3xl bg-white p-4 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-2 pb-3 text-xs text-zinc-500">
+              <span>
+                {modalIndex + 1}/{images.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsImageModalOpen(false)}
+                className="rounded-full border border-zinc-200 px-3 py-1 text-xs text-zinc-700 hover:border-zinc-400"
+              >
+                닫기
+              </button>
+            </div>
+            <div className="relative aspect-square w-full overflow-hidden rounded-2xl bg-zinc-100">
+              <img
+                src={images[modalIndex]?.url}
+                alt={`modal-${modalIndex + 1}`}
+                className="h-full w-full object-cover"
+              />
+            </div>
+            {images.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  className="absolute left-4 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white text-lg text-zinc-700 shadow-sm hover:bg-zinc-50"
+                  onClick={() =>
+                    setModalIndex((prev) =>
+                      prev === 0 ? images.length - 1 : prev - 1
+                    )
+                  }
+                  aria-label="이전 이미지"
+                >
+                  ‹
+                </button>
+                <button
+                  type="button"
+                  className="absolute right-4 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-zinc-200 bg-white text-lg text-zinc-700 shadow-sm hover:bg-zinc-50"
+                  onClick={() =>
+                    setModalIndex((prev) => (prev + 1) % images.length)
+                  }
+                  aria-label="다음 이미지"
+                >
+                  ›
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {isBuyOpen && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 px-4">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
