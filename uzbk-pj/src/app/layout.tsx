@@ -1,17 +1,19 @@
 ﻿import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Hahmlet, Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 import Nav from "@/components/Nav";
 import Providers from "@/app/providers";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const bodyFont = Noto_Sans_KR({
+  variable: "--font-body",
   subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const displayFont = Hahmlet({
+  variable: "--font-display",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -26,11 +28,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${bodyFont.variable} ${displayFont.variable} antialiased`}>
         <Providers>
-          <div className="min-h-screen bg-zinc-50 text-zinc-900">
+          <div className="min-h-screen text-[var(--ink)]">
             <Nav />
-            <main className="mx-auto w-full max-w-7xl px-6 py-8">
+            <main className="mx-auto w-full max-w-7xl px-6 py-10">
               {children}
             </main>
           </div>

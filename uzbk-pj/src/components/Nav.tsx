@@ -242,7 +242,7 @@ export default function Nav() {
       className={
         isLanding
           ? "absolute left-0 top-0 z-30 w-full bg-transparent"
-          : "border-b border-zinc-200 bg-white"
+          : "nav-gradient border-b border-zinc-200/80 backdrop-blur"
       }
     >
       <div className="mx-auto w-full max-w-none px-6 py-4 sm:px-10 xl:px-16">
@@ -255,7 +255,7 @@ export default function Nav() {
             <div className="hidden md:block" />
             <div className="flex items-center justify-center gap-4">
               <Link href="/" className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[#1f4d2e] text-white shadow-[0_10px_24px_rgba(31,77,46,0.25)]">
+                <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--leaf)] text-white shadow-[0_10px_24px_rgba(46,113,74,0.22)]">
                   <svg
                     width="20"
                     height="20"
@@ -272,10 +272,10 @@ export default function Nav() {
                   </svg>
                 </span>
                 <span className="flex flex-col leading-none">
-                  <span className="text-base font-semibold tracking-tight text-[#1f4d2e]">
+                  <span className="font-display text-base font-semibold tracking-tight text-[color:var(--leaf)]">
                     Farm Store
                   </span>
-                  <span className="mt-1 text-[10px] uppercase tracking-[0.3em] text-[#6a8a60]">
+                  <span className="mt-1 text-[10px] uppercase tracking-[0.3em] text-[color:var(--moss)]">
                     fresh local
                   </span>
                 </span>
