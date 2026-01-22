@@ -192,8 +192,8 @@ export default function AuthPage() {
           data: {
             nickname: nickname.trim(),
             address: roadAddress.trim(),
-            postal_code: postalCode.trim() || null,
-            address_detail: addressDetail.trim() || null,
+            postal_code: postalCode.trim() || undefined,
+            address_detail: addressDetail.trim() || undefined,
             latitude: coords.lat,
             longitude: coords.lng,
           },
@@ -211,8 +211,8 @@ export default function AuthPage() {
         await upsertProfile(data.user, {
           nickname: nickname.trim(),
           address: roadAddress.trim(),
-          postal_code: postalCode.trim() || null,
-          address_detail: addressDetail.trim() || null,
+          postal_code: postalCode.trim() || undefined,
+          address_detail: addressDetail.trim() || undefined,
           latitude: coords.lat,
           longitude: coords.lng,
         });
