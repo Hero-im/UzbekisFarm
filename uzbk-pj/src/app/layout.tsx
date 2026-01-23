@@ -1,6 +1,7 @@
 ﻿import type { Metadata } from "next";
 import { Hahmlet, Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
+import { Suspense } from "react";
 import Nav from "@/components/Nav";
 import Providers from "@/app/providers";
 
@@ -31,7 +32,9 @@ export default function RootLayout({
       <body className={`${bodyFont.variable} ${displayFont.variable} antialiased`}>
         <Providers>
           <div className="min-h-screen text-[var(--ink)]">
-            <Nav />
+            <Suspense fallback={null}>
+              <Nav />
+            </Suspense>
             <main className="mx-auto w-full max-w-7xl px-6 py-10">
               {children}
             </main>
