@@ -469,7 +469,6 @@ export default function FeedPage() {
     return () => observer.disconnect();
   }, [visibleLocalPosts, visibleAllPosts, scope, isLocalExpanded, isAllExpanded]);
 
-  if (!session) return <p>로그인이 필요합니다.</p>;
   if (loading) return <Loading />;
 
   const localTotalPages = Math.max(
@@ -506,44 +505,156 @@ export default function FeedPage() {
 
   return (
     <div className="mx-auto flex min-h-[calc(100vh-72px)] w-full max-w-[1800px] flex-col gap-6 px-8 pb-16">
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold">오늘의 농장 상품</h1>
-          <p className="text-sm text-zinc-500">
-            현재 동네: {profileAddress ?? "미설정"}
-          </p>
-          {!profileLocation && (
-            <p className="text-sm text-amber-600">
-              동네 설정이 필요합니다. 마이페이지에서 주소를 등록해주세요.
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex flex-1 flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <h1 className="text-2xl font-semibold">오늘의 농장 상품</h1>
+            <p className="text-sm text-zinc-500">
+              현재 동네: {profileAddress ?? "미설정"}
             </p>
-          )}
-        </div>
+            {!profileLocation && (
+              <p className="text-sm text-amber-600">
+                동네 설정이 필요합니다. 마이페이지에서 주소를 등록해주세요.
+              </p>
+            )}
+          </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-sm text-zinc-600">
-            <input
-              type="checkbox"
-              checked={showSold}
-              onChange={(e) => setShowSold(e.target.checked)}
-            />
-            판매종료 포함
-          </label>
-        </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 text-sm text-zinc-600">
+              <input
+                type="checkbox"
+                checked={showSold}
+                onChange={(e) => setShowSold(e.target.checked)}
+              />
+              판매종료 포함
+            </label>
+          </div>
 
-        <div className="flex flex-wrap gap-2">
-          {CATEGORIES.map((c) => (
-            <button
-              key={c}
-              onClick={() => setCategory(c)}
-              className={`rounded-full border border-zinc-300 px-4 py-2 text-sm shadow-sm ${
-                category === c
-                  ? "bg-zinc-900 text-white"
-                  : "bg-white text-zinc-800 hover:bg-zinc-50"
-              }`}
-            >
-              {c}
-            </button>
-          ))}
+          <div className="flex flex-wrap gap-2">
+            {CATEGORIES.map((c) => (
+              <button
+                key={c}
+                onClick={() => setCategory(c)}
+                className={`rounded-full border border-zinc-300 px-4 py-2 text-sm shadow-sm ${
+                  category === c
+                    ? "bg-zinc-900 text-white"
+                    : "bg-white text-zinc-800 hover:bg-zinc-50"
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 justify-start lg:justify-end">
+          <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">
+            {[
+              { label: "당일 수확", sub: "신선함 유지", icon: "leaf" },
+              { label: "직거래", sub: "믿을 수 있는", icon: "hand" },
+              { label: "지역 농가", sub: "응원합니다", icon: "home" },
+              { label: "합리적 가격", sub: "착한 소비", icon: "coin" },
+            ].map((item) => (
+                <div
+                  key={item.label}
+                  className="relative flex h-32 w-32 flex-col items-center justify-center gap-1 rounded-full border border-white/50 bg-white/70 text-center shadow-[0_16px_28px_rgba(52,73,54,0.16)] ring-1 ring-[color:var(--sun)]/60"
+                >
+                  <svg
+                    className="pointer-events-none absolute -inset-3"
+                    viewBox="0 0 140 140"
+                    aria-hidden="true"
+                  >
+                    <circle
+                      cx="70"
+                      cy="70"
+                      r="52"
+                      fill="none"
+                      stroke="#8fbc7b"
+                      strokeWidth="1.6"
+                      strokeOpacity="0.7"
+                    />
+                  </svg>
+                <div className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/90 shadow-[0_6px_12px_rgba(44,64,50,0.22)]">
+                  {item.icon === "leaf" && (
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[color:var(--leaf)]"
+                    aria-hidden="true"
+                  >
+                    <path d="M7 14c3-6 7-8 10-8 0 6-4 11-10 11" />
+                    <path d="M7 14c0 3 2 4 5 4" />
+                  </svg>
+                  )}
+                  {item.icon === "hand" && (
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[color:var(--leaf)]"
+                    aria-hidden="true"
+                  >
+                    <path d="M8 12V6a2 2 0 0 1 4 0v6" />
+                    <path d="M12 6a2 2 0 0 1 4 0v6" />
+                    <path d="M16 10a2 2 0 0 1 4 0v4c0 4-3 7-7 7h-2a7 7 0 0 1-7-7v-1a2 2 0 0 1 4 0" />
+                  </svg>
+                  )}
+                  {item.icon === "home" && (
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[color:var(--leaf)]"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 10l9-6 9 6" />
+                    <path d="M5 10v10h14V10" />
+                    <path d="M10 20v-6h4v6" />
+                  </svg>
+                  )}
+                  {item.icon === "coin" && (
+                  <svg
+                    width="36"
+                    height="36"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-[color:var(--leaf)]"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M9.5 9.5a2 2 0 0 1 4 0c0 2-3 2-3 4" />
+                    <path d="M12 17h.01" />
+                  </svg>
+                  )}
+                </div>
+                <span className="relative z-10 text-[13px] font-semibold text-zinc-800 drop-shadow-[0_2px_3px_rgba(255,255,255,0.8)]">
+                  {item.label}
+                </span>
+                <span className="relative z-10 text-[11px] text-zinc-600">
+                  {item.sub}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

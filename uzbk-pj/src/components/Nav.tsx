@@ -16,8 +16,6 @@ export default function Nav() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const isFeed = pathname?.startsWith("/feed") || pathname === "/";
-  const isLanding = pathname === "/" && !session;
-
   useEffect(() => {
     if (!isFeed) return;
     setNavQuery(searchParams.get("q") ?? "");
@@ -220,10 +218,6 @@ export default function Nav() {
     };
   }, [roomIds, session, loadUnread]);
 
-  if (isLanding) {
-    return null;
-  }
-
   const handleSearchChange = (value: string) => {
     setNavQuery(value);
     if (!isFeed) return;
@@ -238,13 +232,7 @@ export default function Nav() {
   };
 
   return (
-    <header
-      className={
-        isLanding
-          ? "absolute left-0 top-0 z-30 w-full bg-transparent"
-          : "nav-gradient border-b border-zinc-200/80 backdrop-blur"
-      }
-    >
+    <header className="nav-gradient border-b border-zinc-200/80 backdrop-blur">
       <div className="mx-auto w-full max-w-none px-6 py-4 sm:px-10 xl:px-16">
         {isLoading ? (
           <div className="flex items-center justify-between">
@@ -311,7 +299,7 @@ export default function Nav() {
             <nav className="flex items-center justify-end gap-3 text-[15px]">
             <Link
               href="/posts/new"
-              className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-4.5 py-2.5 hover:border-zinc-900"
+              className="inline-flex items-center gap-2 rounded-full border border-zinc-300/70 bg-transparent px-4.5 py-2.5 hover:border-zinc-900"
             >
               <svg
                 width="20"
@@ -331,7 +319,7 @@ export default function Nav() {
             </Link>
             <Link
               href={`/farms/${session.user.id}`}
-              className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-4.5 py-2.5 hover:border-zinc-900"
+              className="inline-flex items-center gap-2 rounded-full border border-zinc-300/70 bg-transparent px-4.5 py-2.5 hover:border-zinc-900"
             >
               <svg
                 width="20"
@@ -352,7 +340,7 @@ export default function Nav() {
             </Link>
             <Link
               href="/chat"
-              className="relative inline-flex items-center gap-2 rounded-full border border-zinc-200 px-4.5 py-2.5 hover:border-zinc-900"
+              className="relative inline-flex items-center gap-2 rounded-full border border-zinc-300/70 bg-transparent px-4.5 py-2.5 hover:border-zinc-900"
             >
               <svg
                 width="20"
@@ -375,7 +363,7 @@ export default function Nav() {
             {isAdmin && (
               <Link
                 href="/admin/seller-verifications"
-                className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-4.5 py-2.5 hover:border-zinc-900"
+                className="inline-flex items-center gap-2 rounded-full border border-zinc-300/70 bg-transparent px-4.5 py-2.5 hover:border-zinc-900"
               >
                 <svg
                   width="20"
@@ -396,7 +384,7 @@ export default function Nav() {
             )}
             <Link
               href="/me"
-              className="inline-flex items-center gap-2 rounded-full border border-zinc-200 px-4.5 py-2.5 hover:border-zinc-900"
+              className="inline-flex items-center gap-2 rounded-full border border-zinc-300/70 bg-transparent px-4.5 py-2.5 hover:border-zinc-900"
             >
               <svg
                 width="20"
@@ -417,16 +405,63 @@ export default function Nav() {
           </nav>
           </div>
         ) : (
-          <Link
-            href="/auth"
-            className={`rounded-md px-3 py-2 text-sm cursor-pointer ${
-              isLanding
-                ? "border border-[#234d32]/30 bg-white/70 text-[#234d32]"
-                : "bg-zinc-900 text-white"
-            }`}
-          >
-            로그인
-          </Link>
+          <div className="grid items-center gap-6 md:grid-cols-[1fr_auto_1fr]">
+            <div />
+            <Link href="/feed" className="flex items-center justify-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--leaf)] text-white shadow-[0_10px_24px_rgba(46,113,74,0.22)]">
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M7 14c3-6 7-8 10-8 0 6-4 11-10 11" />
+                  <path d="M7 14c0 3 2 4 5 4" />
+                </svg>
+              </span>
+              <span className="flex flex-col leading-none">
+                <span className="font-display text-base font-semibold tracking-tight text-[color:var(--leaf)]">
+                  Farm Store
+                </span>
+                <span className="mt-1 text-[10px] uppercase tracking-[0.3em] text-[color:var(--moss)]">
+                  fresh local
+                </span>
+              </span>
+            </Link>
+            <nav className="flex items-center justify-end gap-3 text-[15px]">
+              <Link
+                href="/auth?mode=signup"
+                className="inline-flex items-center rounded-full border border-zinc-200 bg-white/60 px-4.5 py-2.5 font-semibold text-[color:var(--leaf)] shadow-[0_10px_22px_rgba(46,113,74,0.16)] hover:border-zinc-900"
+              >
+                무료로 시작하기
+              </Link>
+              <Link
+                href="/auth?mode=login"
+                className="inline-flex items-center gap-2 rounded-full border border-zinc-300/70 bg-transparent px-4.5 py-2.5 hover:border-zinc-900"
+              >
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M20 21a8 8 0 0 0-16 0" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+                로그인하기
+              </Link>
+            </nav>
+          </div>
         )}
       </div>
     </header>

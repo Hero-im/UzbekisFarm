@@ -1,15 +1,27 @@
 ﻿"use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase/client";
 
 export default function AuthPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [isSignUp, setIsSignUp] = useState(false);
   const [message, setMessage] = useState("");
+  const [rememberEmail, setRememberEmail] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetStep, setResetStep] = useState<"request" | "verify" | "update">(
+    "request"
+  );
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetPassword, setResetPassword] = useState("");
+  const [resetPasswordConfirm, setResetPasswordConfirm] = useState("");
+  const [resetMessage, setResetMessage] = useState("");
   const [nickname, setNickname] = useState("");
   const [nicknameCheck, setNicknameCheck] = useState<
     "unchecked" | "checking" | "available" | "taken"
@@ -26,6 +38,53 @@ export default function AuthPage() {
     lat: number;
     lng: number;
   } | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("auth_email");
+    if (saved) {
+      setEmail(saved);
+      setRememberEmail(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const mode = searchParams.get("mode");
+    if (mode === "signup") {
+      setIsSignUp(true);
+      setEmail("");
+      setPassword("");
+      setPasswordConfirm("");
+      setMessage("");
+      return;
+    }
+    if (mode === "login") {
+      setIsSignUp(false);
+      setPassword("");
+      setPasswordConfirm("");
+      setMessage("");
+    }
+  }, [searchParams]);
+
+  const formatAuthError = (error: { message?: string; code?: string }) => {
+    const message = (error.message ?? "").toLowerCase();
+    if (message.includes("user already registered")) {
+      return "이미 가입된 이메일입니다.";
+    }
+    if (message.includes("user not found")) {
+      return "가입되지 않은 이메일입니다.";
+    }
+    if (message.includes("invalid login credentials")) {
+      return "이메일 또는 비밀번호가 올바르지 않습니다.";
+    }
+    if (message.includes("email not confirmed")) {
+      return "이메일 인증이 필요합니다.";
+    }
+    if (message.includes("password")) {
+      return "비밀번호 조건을 확인해주세요.";
+    }
+    return "처리 중 오류가 발생했습니다.";
+  };
 
   const handleNicknameCheck = async () => {
     const value = nickname.trim();
@@ -45,7 +104,7 @@ export default function AuthPage() {
 
     if (error) {
       setNicknameCheck("unchecked");
-      setNicknameCheckMessage(error.message);
+      setNicknameCheckMessage(formatAuthError(error));
       return;
     }
 
@@ -164,6 +223,18 @@ export default function AuthPage() {
     setMessage("처리 중...");
 
     if (isSignUp) {
+      if (!email.trim()) {
+        setMessage("이메일을 입력하세요.");
+        return;
+      }
+      if (!password) {
+        setMessage("비밀번호를 입력하세요.");
+        return;
+      }
+      if (password !== passwordConfirm) {
+        setMessage("비밀번호가 일치하지 않습니다.");
+        return;
+      }
       if (!nickname.trim()) {
         setMessage("닉네임을 입력하세요.");
         return;
@@ -204,7 +275,7 @@ export default function AuthPage() {
           setMessage("이미 사용 중인 닉네임입니다.");
           return;
         }
-        setMessage(error.message);
+        setMessage(formatAuthError(error));
         return;
       }
       if (data.user && data.session) {
@@ -230,8 +301,14 @@ export default function AuthPage() {
       password,
     });
     if (error) {
-      setMessage(error.message);
+      setMessage(formatAuthError(error));
       return;
+    }
+
+    if (rememberEmail) {
+      window.localStorage.setItem("auth_email", email.trim());
+    } else {
+      window.localStorage.removeItem("auth_email");
     }
 
     if (data.user) {
@@ -250,6 +327,71 @@ export default function AuthPage() {
     router.replace("/feed");
   };
 
+  const handlePasswordReset = async () => {
+    const targetEmail = resetEmail.trim();
+    if (!targetEmail) {
+      setResetMessage("비밀번호를 재설정할 이메일을 입력하세요.");
+      return;
+    }
+    setResetMessage("인증 코드를 보내는 중...");
+    const { error } = await supabase.auth.signInWithOtp({
+      email: targetEmail,
+      options: {
+        shouldCreateUser: false,
+      },
+    });
+    if (error) {
+      setResetMessage(formatAuthError(error));
+      return;
+    }
+    setResetMessage("인증 코드를 보냈습니다.");
+    setResetStep("verify");
+  };
+
+  const handleVerifyCode = async () => {
+    if (!resetCode.trim()) {
+      setResetMessage("인증 코드를 입력하세요.");
+      return;
+    }
+    setResetMessage("인증 코드를 확인 중...");
+    const { error } = await supabase.auth.verifyOtp({
+      email: resetEmail.trim(),
+      token: resetCode.trim(),
+      type: "email",
+    });
+    if (error) {
+      setResetMessage(formatAuthError(error));
+      return;
+    }
+    setResetMessage("");
+    setResetStep("update");
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!resetPassword) {
+      setResetMessage("새 비밀번호를 입력하세요.");
+      return;
+    }
+    if (resetPassword !== resetPasswordConfirm) {
+      setResetMessage("비밀번호가 일치하지 않습니다.");
+      return;
+    }
+    setResetMessage("비밀번호를 변경 중...");
+    const { error } = await supabase.auth.updateUser({
+      password: resetPassword,
+    });
+    if (error) {
+      setResetMessage(formatAuthError(error));
+      return;
+    }
+    setResetMessage("비밀번호가 변경되었습니다. 다시 로그인해주세요.");
+    setResetOpen(false);
+    setResetStep("request");
+    setResetCode("");
+    setResetPassword("");
+    setResetPasswordConfirm("");
+  };
+
   return (
     <div className="mx-auto max-w-md rounded-lg bg-white p-6 shadow">
       <h1 className="mb-4 text-xl font-semibold">
@@ -259,6 +401,44 @@ export default function AuthPage() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {isSignUp && (
           <>
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium text-zinc-700">이메일</h2>
+              <input
+                type="email"
+                placeholder="이메일"
+                className="w-full rounded border px-3 py-2"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </section>
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium text-zinc-700">비밀번호</h2>
+              <input
+                type="password"
+                placeholder="비밀번호"
+                className="w-full rounded border px-3 py-2"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </section>
+
+            <section className="space-y-2">
+              <h2 className="text-sm font-medium text-zinc-700">
+                비밀번호 확인
+              </h2>
+              <input
+                type="password"
+                placeholder="비밀번호 확인"
+                className="w-full rounded border px-3 py-2"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                required
+              />
+            </section>
+
             <section className="space-y-2">
               <h2 className="text-sm font-medium text-zinc-700">
                 닉네임 설정
@@ -349,29 +529,6 @@ export default function AuthPage() {
               </div>
             </section>
 
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-zinc-700">이메일</h2>
-              <input
-                type="email"
-                placeholder="이메일"
-                className="w-full rounded border px-3 py-2"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </section>
-
-            <section className="space-y-2">
-              <h2 className="text-sm font-medium text-zinc-700">비밀번호</h2>
-              <input
-                type="password"
-                placeholder="비밀번호"
-                className="w-full rounded border px-3 py-2"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </section>
           </>
         )}
 
@@ -393,6 +550,31 @@ export default function AuthPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            <div className="flex items-center justify-between text-sm text-zinc-600">
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={rememberEmail}
+                  onChange={(e) => setRememberEmail(e.target.checked)}
+                />
+                이메일 기억
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setResetOpen(true);
+                  setResetStep("request");
+                  setResetEmail("");
+                  setResetCode("");
+                  setResetPassword("");
+                  setResetPasswordConfirm("");
+                  setResetMessage("");
+                }}
+                className="underline"
+              >
+                비밀번호 찾기
+              </button>
+            </div>
           </>
         )}
 
@@ -421,12 +603,129 @@ export default function AuthPage() {
           setAddressCoords(null);
           setEmail("");
           setPassword("");
+          setRememberEmail(false);
+          setPasswordConfirm("");
         }}
       >
         {isSignUp ? "이미 계정이 있어요 (로그인)" : "처음이세요? (회원가입)"}
       </button>
 
       {message && <p className="mt-3 text-sm text-red-500">{message}</p>}
+
+      {resetOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">비밀번호 찾기</h2>
+              <button
+                type="button"
+                onClick={() => setResetOpen(false)}
+                className="text-sm text-zinc-500"
+              >
+                닫기
+              </button>
+            </div>
+            <div className="mt-4 space-y-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-700">
+                  가입한 이메일
+                </label>
+                <input
+                  type="email"
+                  className="w-full rounded border px-3 py-2"
+                  placeholder="이메일을 입력하세요"
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                />
+              </div>
+
+              {resetStep !== "request" && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-zinc-700">
+                    인증 코드
+                  </label>
+                  <input
+                    type="text"
+                    className="w-full rounded border px-3 py-2"
+                    value={resetCode}
+                    onChange={(e) => setResetCode(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {resetStep === "update" && (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-700">
+                      새 비밀번호
+                    </label>
+                    <input
+                      type="password"
+                      className="w-full rounded border px-3 py-2"
+                      value={resetPassword}
+                      onChange={(e) => setResetPassword(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-zinc-700">
+                      새 비밀번호 확인
+                    </label>
+                    <input
+                      type="password"
+                      className="w-full rounded border px-3 py-2"
+                      value={resetPasswordConfirm}
+                      onChange={(e) => setResetPasswordConfirm(e.target.value)}
+                    />
+                  </div>
+                </>
+              )}
+
+              {resetMessage && (
+                <p className="text-sm text-zinc-600">{resetMessage}</p>
+              )}
+
+              <div className="flex gap-2">
+                {resetStep === "request" && (
+                  <button
+                    type="button"
+                    onClick={handlePasswordReset}
+                    className="flex-1 rounded bg-zinc-900 px-4 py-2 text-white"
+                  >
+                    인증 코드 보내기
+                  </button>
+                )}
+                {resetStep === "verify" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handlePasswordReset}
+                      className="flex-1 rounded border px-4 py-2 text-zinc-700"
+                    >
+                      코드 재전송
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleVerifyCode}
+                      className="flex-1 rounded bg-zinc-900 px-4 py-2 text-white"
+                    >
+                      코드 확인
+                    </button>
+                  </>
+                )}
+                {resetStep === "update" && (
+                  <button
+                    type="button"
+                    onClick={handleUpdatePassword}
+                    className="flex-1 rounded bg-zinc-900 px-4 py-2 text-white"
+                  >
+                    비밀번호 변경
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
