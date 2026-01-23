@@ -18,7 +18,7 @@ const displayFont = Hahmlet({
 });
 
 export const metadata: Metadata = {
-  title: "Local Market MVP",
+  title: "FarmStore",
   description: "Local produce marketplace MVP",
 };
 
